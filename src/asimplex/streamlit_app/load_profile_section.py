@@ -18,6 +18,8 @@ def init_session_state() -> None:
     st.session_state.setdefault("pv_profile_series", None)
     st.session_state.setdefault("pv_profile_description", None)
     st.session_state.setdefault("pv_profile_filename", None)
+    st.session_state.setdefault("project_lat", 52.520000)
+    st.session_state.setdefault("project_lon", 13.405000)
     if "power_profiles" not in st.session_state:
         st.session_state["power_profiles"] = pd.DataFrame(index=BASE_INDEX_15MIN.copy())
 
