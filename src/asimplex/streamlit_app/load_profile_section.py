@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from io import BytesIO
+from numbers import Real
 
 import pandas as pd
 import streamlit as st
@@ -16,16 +17,52 @@ def init_session_state() -> None:
     st.session_state.setdefault("load_profile_filename", None)
 
 
+def _format_metric_name(metric_key: str) -> str:
+    parts = metric_key.split("_")
+    if not parts:
+        return metric_key
+
+    unit_candidates = {"kW", "kWh", "Mw", "Mwh", "W", "Wh", "N"}
+    unit = None
+    last_part = parts[-1]
+    if last_part in unit_candidates:
+        unit = last_part
+        parts = parts[:-1]
+
+    readable_metric = " ".join(parts)
+    if unit:
+        return f"{readable_metric} ({unit})"
+    return readable_metric
+
+
+def _format_metric_value(value: object) -> object:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, Real):
+        precision = 2 if abs(float(value)) > 1 else 5
+        return round(float(value), precision)
+    return value
+
+
 def _render_description_table(description: object) -> None:
     st.markdown("**Description**")
     if isinstance(description, dict):
-        table_df = pd.DataFrame(
-            {"metric": list(description.keys()), "value": list(description.values())}
+        metrics = [_format_metric_name(str(k)) for k in description.keys()]
+        values = [_format_metric_value(v) for v in description.values()]
+        table_df = pd.DataFrame({"metric": metrics, "value": values})
+        st.dataframe(
+            table_df,
+            hide_index=True,
+            use_container_width=True,
         )
-        st.table(table_df)
         return
 
-    st.table(pd.DataFrame({"metric": ["description"], "value": [description]}))
+    fallback_df = pd.DataFrame({"metric": ["description"], "value": [description]})
+    st.dataframe(
+        fallback_df,
+        hide_index=True,
+        use_container_width=True,
+    )
 
 
 def render_sidebar() -> None:

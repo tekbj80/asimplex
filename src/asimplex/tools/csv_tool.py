@@ -85,12 +85,12 @@ def csv_reader_format(
         daily = series_numeric.resample("D").sum() * hour_frac
 
         stats_dict = {
-            "highest_energy_per_day": float(daily.max()),
-            "lowest_energy_per_day": float(daily.min()),
-            "average_energy_per_day": float(daily.mean()),
-            "peak_power": float(series_numeric.max()),
-            "lowest_power": float(series_numeric.min()),
-            "rows_of_data": len(series_numeric),
+            "highest_energy_per_day_kWh": float(daily.max()),
+            "lowest_energy_per_day_kWh": float(daily.min()),
+            "average_energy_per_day_kWh": float(daily.mean()),
+            "peak_power_kW": float(series_numeric.max()),
+            "lowest_power_kW": float(series_numeric.min()),
+            "rows_of_data_N": len(series_numeric),
         }
         format_params = {
             "sep": sep_opt,
