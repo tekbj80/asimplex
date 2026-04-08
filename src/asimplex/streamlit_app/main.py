@@ -4,16 +4,7 @@ from __future__ import annotations
 
 import streamlit as st
 
-
-def render_sidebar() -> None:
-    st.sidebar.title("asimplex")
-    st.sidebar.caption("Navigation")
-    st.sidebar.button("New chat", use_container_width=True, disabled=True)
-    st.sidebar.divider()
-    st.sidebar.markdown("### Chats")
-    st.sidebar.markdown("- Chat 1")
-    st.sidebar.markdown("- Chat 2")
-    st.sidebar.markdown("- Chat 3")
+from asimplex.streamlit_app.load_profile_section import init_session_state, render_sidebar
 
 
 def render_chat_shell() -> None:
@@ -25,6 +16,7 @@ def render_chat_shell() -> None:
 
 def main() -> None:
     st.set_page_config(page_title="asimplex", page_icon=":speech_balloon:", layout="wide")
+    init_session_state()
     render_sidebar()
     render_chat_shell()
 

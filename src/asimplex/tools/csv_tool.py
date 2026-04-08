@@ -90,16 +90,21 @@ def csv_reader_format(
             "average_energy_per_day": float(daily.mean()),
             "peak_power": float(series_numeric.max()),
             "lowest_power": float(series_numeric.min()),
-            "selected_parameters": {
-                "sep": sep_opt,
-                "decimal": decimal_opt,
-                "thousands_sep": thousands_opt,
-                "header": header_opt,
-                "col_number": col_opt,
-            },
+            "rows_of_data": len(series_numeric),
+        }
+        format_params = {
+            "sep": sep_opt,
+            "decimal": decimal_opt,
+            "thousands_sep": thousands_opt,
+            "header": header_opt,
+            "col_number": col_opt,
         }
 
-        return {"time_series_list": series_numeric.tolist(), "description": stats_dict}
+        return {
+            "time_series_list": series_numeric.tolist(), 
+            "description": stats_dict,
+            'format_params': format_params
+            }
 
     return {
         "time_series_list": [0],
