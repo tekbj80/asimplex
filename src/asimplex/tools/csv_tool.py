@@ -8,6 +8,35 @@ from typing import BinaryIO
 
 import pandas as pd
 
+BASE_INDEX_15MIN = pd.date_range("2023-01-01", freq="15 min", periods=35040)
+
+
+def normalize_series_to_15min_2023(values: list[object]) -> pd.Series | None:
+    """Normalize hourly or 15-min yearly series to a 2023 15-minute index."""
+    numeric_series = pd.to_numeric(pd.Series(values), errors="coerce")
+    n_rows = len(numeric_series)
+
+    if n_rows == 35040:
+        normalized = numeric_series.reset_index(drop=True)
+    elif n_rows == 8760:
+        normalized = numeric_series.repeat(4).reset_index(drop=True)
+    elif n_rows == 35136:
+        leap_index_15 = pd.date_range("2024-01-01", freq="15 min", periods=35136)
+        leap_series_15 = pd.Series(numeric_series.values, index=leap_index_15)
+        normalized = leap_series_15[~((leap_series_15.index.month == 2) & (leap_series_15.index.day == 29))]
+        normalized = normalized.reset_index(drop=True)
+    elif n_rows == 8784:
+        leap_index_h = pd.date_range("2024-01-01", freq="h", periods=8784)
+        leap_series_h = pd.Series(numeric_series.values, index=leap_index_h)
+        no_leap_h = leap_series_h[~((leap_series_h.index.month == 2) & (leap_series_h.index.day == 29))]
+        normalized = no_leap_h.repeat(4).reset_index(drop=True)
+    else:
+        return None
+
+    if len(normalized) != len(BASE_INDEX_15MIN):
+        return None
+    return pd.Series(normalized.values, index=BASE_INDEX_15MIN)
+
 
 def csv_reader_format(
     csv_bytes: BinaryIO | BytesIO,

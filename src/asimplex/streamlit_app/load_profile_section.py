@@ -1,4 +1,4 @@
-"""Sidebar and load-profile UI section."""
+"""Load-profile UI section and shared profile helpers."""
 
 from __future__ import annotations
 
@@ -8,13 +8,28 @@ from numbers import Real
 import pandas as pd
 import streamlit as st
 
-from asimplex.tools.csv_tool import csv_reader_format
+from asimplex.tools.csv_tool import BASE_INDEX_15MIN, csv_reader_format, normalize_series_to_15min_2023
 
 
 def init_session_state() -> None:
     st.session_state.setdefault("load_profile_series", None)
     st.session_state.setdefault("load_profile_description", None)
     st.session_state.setdefault("load_profile_filename", None)
+    st.session_state.setdefault("pv_profile_series", None)
+    st.session_state.setdefault("pv_profile_description", None)
+    st.session_state.setdefault("pv_profile_filename", None)
+    if "power_profiles" not in st.session_state:
+        st.session_state["power_profiles"] = pd.DataFrame(index=BASE_INDEX_15MIN.copy())
+
+
+def apply_profile_to_power_profiles(column_name: str, values: list[object]) -> bool:
+    series_15 = normalize_series_to_15min_2023(values)
+    if series_15 is None:
+        return False
+    profiles_df = st.session_state["power_profiles"].copy()
+    profiles_df[column_name] = series_15.values
+    st.session_state["power_profiles"] = profiles_df
+    return True
 
 
 def _format_metric_name(metric_key: str) -> str:
@@ -22,7 +37,7 @@ def _format_metric_name(metric_key: str) -> str:
     if not parts:
         return metric_key
 
-    unit_candidates = {"kW", "kWh", "Mw", "Mwh", "W", "Wh", "N"}
+    unit_candidates = {"kW", "kWh", "MW", "MWh", "W", "Wh", "N"}
     unit = None
     last_part = parts[-1]
     if last_part in unit_candidates:
@@ -44,7 +59,7 @@ def _format_metric_value(value: object) -> object:
     return value
 
 
-def _render_description_table(description: object) -> None:
+def render_description_table(description: object) -> None:
     st.markdown("**Description**")
     if isinstance(description, dict):
         metrics = [_format_metric_name(str(k)) for k in description.keys()]
@@ -58,24 +73,16 @@ def _render_description_table(description: object) -> None:
         return
 
     fallback_df = pd.DataFrame({"metric": ["description"], "value": [description]})
-    st.dataframe(
-        fallback_df,
-        hide_index=True,
-        use_container_width=True,
-    )
+    st.dataframe(fallback_df, hide_index=True, use_container_width=True)
 
 
-def render_sidebar() -> None:
-    st.sidebar.title("asimplex")
-    st.sidebar.caption("Navigation")
-    st.sidebar.button("New chat", use_container_width=True, disabled=True)
-    st.sidebar.divider()
-
+def render_load_profile_section() -> None:
     with st.sidebar.expander("Load profile", expanded=True):
         uploaded_file = st.file_uploader(
             "Upload CSV file",
             type=["csv"],
             accept_multiple_files=False,
+            key="load_profile_upload",
         )
 
         if uploaded_file is not None:
@@ -85,6 +92,8 @@ def render_sidebar() -> None:
                 st.session_state["load_profile_series"] = result.get("time_series_list")
                 st.session_state["load_profile_description"] = result.get("description")
                 st.session_state["load_profile_filename"] = uploaded_file.name
+                if isinstance(result.get("description"), dict):
+                    apply_profile_to_power_profiles("load", result.get("time_series_list", []))
             except Exception as exc:  # pragma: no cover - UI defensive branch
                 st.session_state["load_profile_series"] = [0]
                 st.session_state["load_profile_description"] = f"Failed to parse file: {exc}"
@@ -92,4 +101,4 @@ def render_sidebar() -> None:
 
         description = st.session_state.get("load_profile_description")
         if description is not None:
-            _render_description_table(description)
+            render_description_table(description)

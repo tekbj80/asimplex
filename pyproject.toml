@@ -10,8 +10,12 @@ readme = "README.md"
 requires-python = ">=3.10"
 authors = [{ name = "el_Boon" }]
 dependencies = [
+    "folium",
     "pandas",
+    "plotly",
+    "requests",
     "streamlit",
+    "streamlit-folium",
 ]
 
 [project.optional-dependencies]

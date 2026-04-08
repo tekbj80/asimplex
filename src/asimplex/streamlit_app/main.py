@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import streamlit as st
 
-from asimplex.streamlit_app.load_profile_section import init_session_state, render_sidebar
+from asimplex.streamlit_app.load_profile_section import init_session_state
+from asimplex.streamlit_app.power_profiles_plot import render_power_profiles_plot
+from asimplex.streamlit_app.sidebar import render_sidebar
 
 
 def render_chat_shell() -> None:
@@ -18,6 +20,7 @@ def main() -> None:
     st.set_page_config(page_title="asimplex", page_icon=":speech_balloon:", layout="wide")
     init_session_state()
     render_sidebar()
+    render_power_profiles_plot()
     render_chat_shell()
 
 
