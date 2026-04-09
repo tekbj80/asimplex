@@ -9,7 +9,13 @@ from typing import BinaryIO
 import pandas as pd
 
 BASE_INDEX_15MIN = pd.date_range("2023-01-01", freq="15 min", periods=35040)
+BAD_DATA_MESSAGE = """
+No valid full-year series found for supplied parsing options. 
 
+CSV file should be in columns, having a whole year of data. 
+Valid number of rows (exclude header) 8760, 35040, 8784, 35136.
+
+"""
 
 def normalize_series_to_15min_2023(values: list[object]) -> pd.Series | None:
     """Normalize hourly or 15-min yearly series to a 2023 15-minute index."""
@@ -104,7 +110,7 @@ def csv_reader_format(
             continue
 
         if len(series_numeric) in [8760, 8784]:
-            freq = "H"
+            freq = "h"
             hour_frac = 1
         else:
             freq = "15 min"
@@ -137,6 +143,6 @@ def csv_reader_format(
 
     return {
         "time_series_list": [0],
-        "description": "No valid full-year series found for supplied parsing options.",
+        "description": BAD_DATA_MESSAGE,
         "parse_attempts": parse_errors,
     }

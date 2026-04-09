@@ -91,12 +91,14 @@ def render_pv_profile_section() -> None:
                 st.session_state["pv_profile_series"] = result.get("time_series_list")
                 st.session_state["pv_profile_description"] = result.get("description")
                 st.session_state["pv_profile_filename"] = uploaded_file.name
+                st.session_state["pv_profile_parse_attempts"] = result.get("parse_attempts")
                 if isinstance(result.get("description"), dict):
                     apply_profile_to_power_profiles("pv", result.get("time_series_list", []))
             except Exception as exc:  # pragma: no cover - UI defensive branch
                 st.session_state["pv_profile_series"] = [0]
                 st.session_state["pv_profile_description"] = f"Failed to parse PV file: {exc}"
                 st.session_state["pv_profile_filename"] = uploaded_file.name
+                st.session_state["pv_profile_parse_attempts"] = None
 
         st.markdown("**Map**")
         m = folium.Map(
@@ -191,10 +193,12 @@ def render_pv_profile_section() -> None:
                 st.session_state["pv_profile_series"] = pv_series_15.tolist()
                 st.session_state["pv_profile_description"] = _build_description_from_series(pv_series_15)
                 st.session_state["pv_profile_filename"] = "PVGIS seriescalc"
+                st.session_state["pv_profile_parse_attempts"] = None
                 st.success(f"Fetched and stored {len(pv_series_15)} PV rows.")
             except Exception as exc:
                 st.error(f"Request failed: {exc}")
 
         description = st.session_state.get("pv_profile_description")
+        parse_attempts = st.session_state.get("pv_profile_parse_attempts")
         if description is not None:
-            render_description_table(description)
+            render_description_table(description, parse_attempts=parse_attempts)

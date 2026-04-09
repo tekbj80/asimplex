@@ -11,7 +11,7 @@ from asimplex.streamlit_app.pv_profile_section import render_pv_profile_section
 def render_sidebar() -> None:
     st.sidebar.title("asimplex")
     st.sidebar.caption("Navigation")
-    st.sidebar.button("New chat", use_container_width=True, disabled=True)
+    st.sidebar.button("New chat", width="stretch", disabled=True)
     st.sidebar.divider()
     render_load_profile_section()
     render_pv_profile_section()

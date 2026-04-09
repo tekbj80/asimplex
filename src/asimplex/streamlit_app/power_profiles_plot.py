@@ -42,4 +42,4 @@ def render_power_profiles_plot() -> None:
         legend_title="Profiles",
         template="plotly_white",
     )
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width="stretch")

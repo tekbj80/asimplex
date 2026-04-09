@@ -15,9 +15,11 @@ def init_session_state() -> None:
     st.session_state.setdefault("load_profile_series", None)
     st.session_state.setdefault("load_profile_description", None)
     st.session_state.setdefault("load_profile_filename", None)
+    st.session_state.setdefault("load_profile_parse_attempts", None)
     st.session_state.setdefault("pv_profile_series", None)
     st.session_state.setdefault("pv_profile_description", None)
     st.session_state.setdefault("pv_profile_filename", None)
+    st.session_state.setdefault("pv_profile_parse_attempts", None)
     st.session_state.setdefault("project_lat", 52.520000)
     st.session_state.setdefault("project_lon", 13.405000)
     if "power_profiles" not in st.session_state:
@@ -61,8 +63,14 @@ def _format_metric_value(value: object) -> object:
     return value
 
 
-def render_description_table(description: object) -> None:
+def render_description_table(description: object, parse_attempts: list[str] | None = None) -> None:
     st.markdown("**Description**")
+    if isinstance(description, str) and isinstance(parse_attempts, list) and len(parse_attempts) > 0:
+        st.markdown(description)
+        st.markdown("**Parse attempts**")
+        st.markdown(f"```text\n{chr(10).join(parse_attempts[-5:])}\n```")
+        return
+
     if isinstance(description, dict):
         metrics = [_format_metric_name(str(k)) for k in description.keys()]
         values = [_format_metric_value(v) for v in description.values()]
@@ -70,12 +78,12 @@ def render_description_table(description: object) -> None:
         st.dataframe(
             table_df,
             hide_index=True,
-            use_container_width=True,
+            width="stretch",
         )
         return
 
     fallback_df = pd.DataFrame({"metric": ["description"], "value": [description]})
-    st.dataframe(fallback_df, hide_index=True, use_container_width=True)
+    st.dataframe(fallback_df, hide_index=True, width="stretch")
 
 
 def render_load_profile_section() -> None:
@@ -94,13 +102,16 @@ def render_load_profile_section() -> None:
                 st.session_state["load_profile_series"] = result.get("time_series_list")
                 st.session_state["load_profile_description"] = result.get("description")
                 st.session_state["load_profile_filename"] = uploaded_file.name
+                st.session_state["load_profile_parse_attempts"] = result.get("parse_attempts")
                 if isinstance(result.get("description"), dict):
                     apply_profile_to_power_profiles("load", result.get("time_series_list", []))
             except Exception as exc:  # pragma: no cover - UI defensive branch
                 st.session_state["load_profile_series"] = [0]
                 st.session_state["load_profile_description"] = f"Failed to parse file: {exc}"
                 st.session_state["load_profile_filename"] = uploaded_file.name
+                st.session_state["load_profile_parse_attempts"] = None
 
         description = st.session_state.get("load_profile_description")
+        parse_attempts = st.session_state.get("load_profile_parse_attempts")
         if description is not None:
-            render_description_table(description)
+            render_description_table(description, parse_attempts=parse_attempts)
