@@ -8,9 +8,8 @@ from numbers import Real
 import pandas as pd
 import streamlit as st
 
+from asimplex.constants import HOUR_FRAC
 from asimplex.tools.csv_tool import BASE_INDEX_15MIN, csv_reader_format, normalize_series_to_15min_2023
-
-HOUR_FRAC = 0.25
 
 
 def init_session_state() -> None:

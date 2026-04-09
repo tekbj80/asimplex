@@ -10,6 +10,7 @@ import requests
 import streamlit as st
 from streamlit_folium import st_folium
 
+from asimplex.constants import HOUR_FRAC
 from asimplex.streamlit_app.load_profile_section import (
     apply_profile_to_power_profiles,
     render_description_table,
@@ -66,9 +67,9 @@ def _fetch_pv_power_profile_15min(
 
 def _build_description_from_series(series: pd.Series) -> dict[str, float]:
     return {
-        "highest_energy_per_day_kWh": float(series.resample("D").sum().max() * 0.25),
-        "lowest_energy_per_day_kWh": float(series.resample("D").sum().min() * 0.25),
-        "average_energy_per_day_kWh": float(series.resample("D").sum().mean() * 0.25),
+        "highest_energy_per_day_kWh": float(series.resample("D").sum().max() * HOUR_FRAC),
+        "lowest_energy_per_day_kWh": float(series.resample("D").sum().min() * HOUR_FRAC),
+        "average_energy_per_day_kWh": float(series.resample("D").sum().mean() * HOUR_FRAC),
         "peak_power_kW": float(series.max()),
         "lowest_power_kW": float(series.min()),
         "rows_of_data_N": float(len(series)),
