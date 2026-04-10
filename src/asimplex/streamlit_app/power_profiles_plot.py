@@ -2,8 +2,12 @@
 
 from __future__ import annotations
 
+import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
+
+from asimplex.tools.calculations import summarize_load_profile
+from asimplex.tools.formatting import format_metric_name, format_metric_value
 
 
 def render_power_profiles_plot() -> None:
@@ -13,6 +17,7 @@ def render_power_profiles_plot() -> None:
         return
 
     with st.expander("Power Profiles Plot", expanded=True):
+        col_plot, col_panel = st.columns([2, 1], gap="medium")
         fig = go.Figure()
         if "load" in profiles.columns:
             fig.add_trace(
@@ -92,4 +97,21 @@ def render_power_profiles_plot() -> None:
             legend_title="Profiles",
             template="plotly_white",
         )
-        st.plotly_chart(fig, width="stretch")
+        with col_plot:
+            st.plotly_chart(fig, width="stretch")
+
+        with col_panel:
+            st.markdown("**Profile summary**")
+            summary_columns = ["load", "grid_power_draw"]
+            available_summary_columns = [col for col in summary_columns if col in profiles.columns]
+            if not available_summary_columns:
+                st.dataframe(pd.DataFrame(columns=["metric"]), width="stretch", height=320)
+            else:
+                metric_map: dict[str, dict[str, float]] = {
+                    col: summarize_load_profile(profiles[col]) for col in available_summary_columns
+                }
+                raw_metrics = list(next(iter(metric_map.values())).keys())
+                summary_df = pd.DataFrame({"metric": [format_metric_name(m) for m in raw_metrics]})
+                for col in available_summary_columns:
+                    summary_df[col] = [format_metric_value(metric_map[col][metric]) for metric in raw_metrics]
+                st.dataframe(summary_df, width="stretch", height=320, hide_index=True)

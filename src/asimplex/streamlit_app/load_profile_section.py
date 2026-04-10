@@ -3,12 +3,12 @@
 from __future__ import annotations
 
 from io import BytesIO
-from numbers import Real
 
 import pandas as pd
 import streamlit as st
 
-from asimplex.constants import HOUR_FRAC
+from asimplex.tools.calculations import calculate_full_hour_equivalent
+from asimplex.tools.formatting import format_metric_name, format_metric_value
 from asimplex.tools.csv_tool import BASE_INDEX_15MIN, csv_reader_format, normalize_series_to_15min_2023
 
 
@@ -27,6 +27,21 @@ def init_session_state() -> None:
     st.session_state.setdefault(
         "usage_hour_equivalent",
         {"value": None, "description": "load only"},
+    )
+    st.session_state.setdefault(
+        "electrical_tariff",
+        {
+            "lt_2500_hour_equivalent": {
+                "power_charge_eur_per_kw": 0.0,
+                "energy_charge_eur_per_kwh": 0.0,
+            },
+            "gt_2500_hour_equivalent": {
+                "power_charge_eur_per_kw": 0.0,
+                "energy_charge_eur_per_kwh": 0.0,
+            },
+            "other_charges_eur_per_kwh": 0.0,
+            "taxes_duties_percent_of_total": 0.0,
+        },
     )
     if "power_profiles" not in st.session_state:
         st.session_state["power_profiles"] = pd.DataFrame(index=BASE_INDEX_15MIN.copy())
@@ -70,7 +85,7 @@ def _calculate_full_hour_equivalent(profiles_df: pd.DataFrame) -> None:
         col_peak = 0.0
 
     if col_peak > 0 and col_for_fhe_calc in profiles_df.columns:
-        usage_hour_equivalent = profiles_df[col_for_fhe_calc].mul(HOUR_FRAC).sum() / col_peak
+        usage_hour_equivalent = calculate_full_hour_equivalent(profiles_df[col_for_fhe_calc])
         usage_state["value"] = float(usage_hour_equivalent)
     elif col_for_fhe_calc in profiles_df.columns:
         usage_state["value"] = 0.0
@@ -99,33 +114,6 @@ def apply_profile_to_power_profiles(column_name: str, values: list[object]) -> b
     return True
 
 
-def _format_metric_name(metric_key: str) -> str:
-    parts = metric_key.split("_")
-    if not parts:
-        return metric_key
-
-    unit_candidates = {"kW", "kWh", "MW", "MWh", "W", "Wh", "N"}
-    unit = None
-    last_part = parts[-1]
-    if last_part in unit_candidates:
-        unit = last_part
-        parts = parts[:-1]
-
-    readable_metric = " ".join(parts)
-    if unit:
-        return f"{readable_metric} ({unit})"
-    return readable_metric
-
-
-def _format_metric_value(value: object) -> object:
-    if isinstance(value, bool):
-        return value
-    if isinstance(value, Real):
-        precision = 2 if abs(float(value)) > 1 else 5
-        return round(float(value), precision)
-    return value
-
-
 def render_description_table(description: object, parse_attempts: list[str] | None = None) -> None:
     st.markdown("**Description**")
     if isinstance(description, str) and isinstance(parse_attempts, list) and len(parse_attempts) > 0:
@@ -135,8 +123,8 @@ def render_description_table(description: object, parse_attempts: list[str] | No
         return
 
     if isinstance(description, dict):
-        metrics = [_format_metric_name(str(k)) for k in description.keys()]
-        values = [_format_metric_value(v) for v in description.values()]
+        metrics = [format_metric_name(str(k)) for k in description.keys()]
+        values = [format_metric_value(v) for v in description.values()]
         table_df = pd.DataFrame({"metric": metrics, "value": values})
         st.dataframe(
             table_df,
