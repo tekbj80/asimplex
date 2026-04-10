@@ -185,7 +185,11 @@ def render_peak_shaving_table() -> None:
                 summary_json = _build_peak_shaving_json(
                     discharge_df=discharge_df,
                     power_limit_kw=float(power_limit),
-                    current_fhe_h=st.session_state.get("usage_hour_equivalent"),
+                    current_fhe_h=(
+                        st.session_state.get("usage_hour_equivalent", {}).get("value")
+                        if isinstance(st.session_state.get("usage_hour_equivalent"), dict)
+                        else st.session_state.get("usage_hour_equivalent")
+                    ),
                 )
                 st.session_state["peak_shaving_json"] = summary_json
                 with st.expander("Peak shaving JSON (Summarized Data to LLM)", expanded=False):

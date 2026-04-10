@@ -23,26 +23,68 @@ def init_session_state() -> None:
     st.session_state.setdefault("pv_profile_parse_attempts", None)
     st.session_state.setdefault("project_lat", 52.520000)
     st.session_state.setdefault("project_lon", 13.405000)
-    st.session_state.setdefault("usage_hour_equivalent", None)
+    st.session_state.setdefault("pv_system_already_exists", False)
+    st.session_state.setdefault(
+        "usage_hour_equivalent",
+        {"value": None, "description": "load only"},
+    )
     if "power_profiles" not in st.session_state:
         st.session_state["power_profiles"] = pd.DataFrame(index=BASE_INDEX_15MIN.copy())
 
 
-def _update_derived_profile_columns(profiles_df: pd.DataFrame) -> pd.DataFrame:
-    if "load" in profiles_df.columns and "pv" in profiles_df.columns:
+def _calculate_excess_and_deficit_of_pv_power(profiles_df: pd.DataFrame) -> pd.DataFrame:
+    """Compute the excess and deficit of PV power."""
+    has_load = "load" in profiles_df.columns
+    has_pv = "pv" in profiles_df.columns
+    if has_load and has_pv:
         profiles_df["excess_pv"] = (profiles_df["pv"] - profiles_df["load"]).clip(lower=0)
         profiles_df["grid_power_draw"] = (profiles_df["load"] - profiles_df["pv"]).clip(lower=0)
-
-        load_peak = float(profiles_df["load"].max())
-        if load_peak > 0:
-            usage_hour_equivalent = profiles_df["grid_power_draw"].mul(HOUR_FRAC).sum() / load_peak
-            st.session_state["usage_hour_equivalent"] = float(usage_hour_equivalent)
-        else:
-            st.session_state["usage_hour_equivalent"] = 0.0
     else:
         profiles_df = profiles_df.drop(columns=["excess_pv", "grid_power_draw"], errors="ignore")
-        st.session_state["usage_hour_equivalent"] = None
     return profiles_df
+
+
+def _calculate_full_hour_equivalent(profiles_df: pd.DataFrame) -> None:
+    """
+    Update session-state full-hour-equivalent (FHE) using selected basis.
+
+    - "load only" when no existing PV system
+    - "residual load with PV" when existing PV system
+    """
+    use_residual_load = bool(st.session_state.get("pv_system_already_exists", False))
+    if use_residual_load:
+        col_for_fhe_calc = "grid_power_draw"
+        calc_description = "residual load with PV"
+    else:
+        col_for_fhe_calc = "load"
+        calc_description = "load only"
+
+    usage_state = st.session_state.get("usage_hour_equivalent")
+    if not isinstance(usage_state, dict):
+        usage_state = {"value": None, "description": calc_description}
+    usage_state["description"] = calc_description
+
+    if col_for_fhe_calc in profiles_df.columns:
+        col_peak = float(profiles_df[col_for_fhe_calc].max())
+    else:
+        col_peak = 0.0
+
+    if col_peak > 0 and col_for_fhe_calc in profiles_df.columns:
+        usage_hour_equivalent = profiles_df[col_for_fhe_calc].mul(HOUR_FRAC).sum() / col_peak
+        usage_state["value"] = float(usage_hour_equivalent)
+    elif col_for_fhe_calc in profiles_df.columns:
+        usage_state["value"] = 0.0
+    else:
+        usage_state["value"] = None
+    st.session_state["usage_hour_equivalent"] = usage_state
+
+
+def refresh_power_profiles_metrics() -> None:
+    profiles_df = st.session_state.get("power_profiles")
+    if isinstance(profiles_df, pd.DataFrame):
+        updated_profiles_df = _calculate_excess_and_deficit_of_pv_power(profiles_df.copy())
+        _calculate_full_hour_equivalent(updated_profiles_df)
+        st.session_state["power_profiles"] = updated_profiles_df
 
 
 def apply_profile_to_power_profiles(column_name: str, values: list[object]) -> bool:
@@ -51,7 +93,8 @@ def apply_profile_to_power_profiles(column_name: str, values: list[object]) -> b
         return False
     profiles_df = st.session_state["power_profiles"].copy()
     profiles_df[column_name] = series_15.values
-    profiles_df = _update_derived_profile_columns(profiles_df)
+    profiles_df = _calculate_excess_and_deficit_of_pv_power(profiles_df)
+    _calculate_full_hour_equivalent(profiles_df)
     st.session_state["power_profiles"] = profiles_df
     return True
 

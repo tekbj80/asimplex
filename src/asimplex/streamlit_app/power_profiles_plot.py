@@ -67,13 +67,21 @@ def render_power_profiles_plot() -> None:
             )
 
         usage_hour_equivalent = st.session_state.get("usage_hour_equivalent")
-        if usage_hour_equivalent is not None:
+        usage_value = None
+        usage_description = "load only"
+        if isinstance(usage_hour_equivalent, dict):
+            usage_value = usage_hour_equivalent.get("value")
+            usage_description = str(usage_hour_equivalent.get("description", usage_description))
+        else:
+            usage_value = usage_hour_equivalent
+
+        if usage_value is not None:
             fig.add_hline(
-                y=float(usage_hour_equivalent),
+                y=float(usage_value),
                 line_color="black",
                 line_dash="dot",
                 line_width=1.5,
-                annotation_text=f"usage_hour_equivalent={float(usage_hour_equivalent):.2f}",
+                annotation_text=f"usage_hour_equivalent ({usage_description})={float(usage_value):.2f}",
                 annotation_position="top left",
             )
 

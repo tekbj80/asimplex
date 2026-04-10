@@ -13,6 +13,7 @@ from streamlit_folium import st_folium
 from asimplex.constants import HOUR_FRAC
 from asimplex.streamlit_app.load_profile_section import (
     apply_profile_to_power_profiles,
+    refresh_power_profiles_metrics,
     render_description_table,
 )
 from asimplex.tools.csv_tool import csv_reader_format, normalize_series_to_15min_2023
@@ -78,6 +79,9 @@ def _build_description_from_series(series: pd.Series) -> dict[str, float]:
 
 def render_pv_profile_section() -> None:
     with st.sidebar.expander("PV Power Profile", expanded=False):
+        st.checkbox("Is there an existing PV system?", key="pv_system_already_exists")
+        refresh_power_profiles_metrics()
+
         uploaded_file = st.file_uploader(
             "Upload PV CSV file",
             type=["csv"],
