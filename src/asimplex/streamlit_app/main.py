@@ -8,6 +8,7 @@ from asimplex.streamlit_app.load_profile_section import init_session_state
 from asimplex.streamlit_app.peak_shaving_table import render_peak_shaving_table
 from asimplex.streamlit_app.power_profiles_plot import render_power_profiles_plot
 from asimplex.streamlit_app.sidebar import render_sidebar
+from asimplex.streamlit_app.simulation_plan_section import render_simulation_plan_section
 
 
 def render_chat_shell() -> None:
@@ -23,6 +24,7 @@ def main() -> None:
     render_sidebar()
     render_power_profiles_plot()
     render_peak_shaving_table()
+    render_simulation_plan_section()
     render_chat_shell()
 
 
