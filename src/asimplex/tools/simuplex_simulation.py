@@ -5,6 +5,8 @@ from __future__ import annotations
 import copy
 import datetime as dt
 
+from bokeh.embed import file_html
+from bokeh.resources import CDN
 from simuplex import (
     DEFAULT_BATTERY_PARAMS,
     DEFAULT_CLOCK_PARAMS,
@@ -15,6 +17,7 @@ from simuplex import (
     GermanGridTariff,
     PeakShavingMUSimulator,
 )
+from simuplex.ancillaries.interactive_plots import sim_plot
 from simuplex.applications.peak_shaving import DEFAULT_APPLICATION_PARAMS
 
 
@@ -88,3 +91,9 @@ def build_peak_shaving_simulator(
         grid_params=grid_params,
         application_params=app_params,
     )
+
+
+def build_simulation_plot_html(simulator: PeakShavingMUSimulator, *, title: str = "Simulation Plan Output") -> str:
+    """Build HTML for the simulator interactive Bokeh plot."""
+    layout = sim_plot(simulator, title=title)
+    return file_html(layout, CDN, title)

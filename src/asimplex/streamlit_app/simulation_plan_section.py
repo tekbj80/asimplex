@@ -7,10 +7,11 @@ import json
 
 import pandas as pd
 import streamlit as st
+import streamlit.components.v1 as components
 from simuplex import DEFAULT_BATTERY_PARAMS, DEFAULT_CLOCK_PARAMS, DEFAULT_COMMERCIAL_PARAMS, DEFAULT_GRID_PARAMS
 from simuplex.applications.peak_shaving import DEFAULT_APPLICATION_PARAMS
 
-from asimplex.tools.simuplex_simulation import build_peak_shaving_simulator
+from asimplex.tools.simuplex_simulation import build_peak_shaving_simulator, build_simulation_plot_html
 
 
 def _default_simulation_plan_params() -> dict:
@@ -75,6 +76,7 @@ def render_simulation_plan_section() -> None:
         params = _default_simulation_plan_params()
         st.session_state["simulation_plan_params"] = params
     st.session_state.setdefault("simulation_plan_benchmarks", None)
+    st.session_state.setdefault("simulation_plan_plot_html", None)
 
     with st.expander("Simulation Plan", expanded=False):
         st.markdown("**Clock**")
@@ -279,14 +281,23 @@ def render_simulation_plan_section() -> None:
                     with st.spinner("Simulation running..."):
                         simulator.run_simulation(in_jupyter=False, disable_tqdm=False, calculate_benchmarks=True)
                     benchmarks = simulator.benchmarks or {}
+                    simulation_plot_html = build_simulation_plot_html(simulator, title="Simulation Plan Output")
                     st.session_state["simulation_plan_benchmarks"] = benchmarks
+                    st.session_state["simulation_plan_plot_html"] = simulation_plot_html
                     st.success("Simulation completed.")
                 except Exception as exc:
                     st.error(f"Simulation failed: {exc}")
 
         benchmarks = st.session_state.get("simulation_plan_benchmarks")
         if isinstance(benchmarks, dict) and benchmarks:
-            benchmark_df = pd.DataFrame(
-                {"benchmark": list(benchmarks.keys()), "value": list(benchmarks.values())}
-            )
-            st.dataframe(benchmark_df, width="stretch", hide_index=True)
+            with st.expander("Simulation Benchmarks", expanded=True):
+                benchmark_df = pd.DataFrame(
+                    {"benchmark": list(benchmarks.keys()), "value": list(benchmarks.values())}
+                )
+                st.dataframe(benchmark_df, width="stretch", hide_index=True)
+
+        simulation_plot_html = st.session_state.get("simulation_plan_plot_html")
+        if isinstance(simulation_plot_html, str) and simulation_plot_html.strip():
+            with st.expander("Simulation Interactive Plot", expanded=True):
+                st.markdown("**Simulation Interactive Plot**")
+                components.html(simulation_plot_html, height=850, scrolling=True)
