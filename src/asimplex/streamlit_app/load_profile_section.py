@@ -7,6 +7,7 @@ from io import BytesIO
 import pandas as pd
 import streamlit as st
 
+from asimplex.streamlit_app.profile_columns import ProfileColumn
 from asimplex.tools.calculations import calculate_full_hour_equivalent
 from asimplex.tools.formatting import format_metric_name, format_metric_value
 from asimplex.tools.csv_tool import BASE_INDEX_15MIN, csv_reader_format, normalize_series_to_15min_2023
@@ -49,13 +50,19 @@ def init_session_state() -> None:
 
 def _calculate_excess_and_deficit_of_pv_power(profiles_df: pd.DataFrame) -> pd.DataFrame:
     """Compute the excess and deficit of PV power."""
-    has_load = "load" in profiles_df.columns
-    has_pv = "pv" in profiles_df.columns
+    has_load = ProfileColumn.SITE_LOAD.column_name in profiles_df.columns
+    has_pv = ProfileColumn.PV_PRODUCTION.column_name in profiles_df.columns
     if has_load and has_pv:
-        profiles_df["excess_pv"] = (profiles_df["pv"] - profiles_df["load"]).clip(lower=0)
-        profiles_df["grid_power_draw"] = (profiles_df["load"] - profiles_df["pv"]).clip(lower=0)
+        profiles_df[ProfileColumn.PV_SURPLUS.column_name] = (
+            profiles_df[ProfileColumn.PV_PRODUCTION.column_name] - profiles_df[ProfileColumn.SITE_LOAD.column_name]
+        ).clip(lower=0)
+        profiles_df[ProfileColumn.GRID_IMPORT.column_name] = (
+            profiles_df[ProfileColumn.SITE_LOAD.column_name] - profiles_df[ProfileColumn.PV_PRODUCTION.column_name]
+        ).clip(lower=0)
     else:
-        profiles_df = profiles_df.drop(columns=["excess_pv", "grid_power_draw"], errors="ignore")
+        profiles_df = profiles_df.drop(
+            columns=[ProfileColumn.PV_SURPLUS.column_name, ProfileColumn.GRID_IMPORT.column_name], errors="ignore"
+        )
     return profiles_df
 
 
@@ -68,10 +75,10 @@ def _calculate_full_hour_equivalent(profiles_df: pd.DataFrame) -> None:
     """
     use_residual_load = bool(st.session_state.get("pv_system_already_exists", False))
     if use_residual_load:
-        col_for_fhe_calc = "grid_power_draw"
+        col_for_fhe_calc = ProfileColumn.GRID_IMPORT.column_name
         calc_description = "residual load with PV"
     else:
-        col_for_fhe_calc = "load"
+        col_for_fhe_calc = ProfileColumn.SITE_LOAD.column_name
         calc_description = "load only"
 
     usage_state = st.session_state.get("usage_hour_equivalent")
@@ -155,7 +162,9 @@ def render_load_profile_section() -> None:
                 st.session_state["load_profile_filename"] = uploaded_file.name
                 st.session_state["load_profile_parse_attempts"] = result.get("parse_attempts")
                 if isinstance(result.get("description"), dict):
-                    apply_profile_to_power_profiles("load", result.get("time_series_list", []))
+                    apply_profile_to_power_profiles(
+                        ProfileColumn.SITE_LOAD.column_name, result.get("time_series_list", [])
+                    )
             except Exception as exc:  # pragma: no cover - UI defensive branch
                 st.session_state["load_profile_series"] = [0]
                 st.session_state["load_profile_description"] = f"Failed to parse file: {exc}"

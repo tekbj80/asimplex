@@ -16,6 +16,7 @@ from asimplex.streamlit_app.load_profile_section import (
     refresh_power_profiles_metrics,
     render_description_table,
 )
+from asimplex.streamlit_app.profile_columns import ProfileColumn
 from asimplex.tools.csv_tool import csv_reader_format, normalize_series_to_15min_2023
 
 
@@ -98,7 +99,9 @@ def render_pv_profile_section() -> None:
                 st.session_state["pv_profile_filename"] = uploaded_file.name
                 st.session_state["pv_profile_parse_attempts"] = result.get("parse_attempts")
                 if isinstance(result.get("description"), dict):
-                    apply_profile_to_power_profiles("pv", result.get("time_series_list", []))
+                    apply_profile_to_power_profiles(
+                        ProfileColumn.PV_PRODUCTION.column_name, result.get("time_series_list", [])
+                    )
             except Exception as exc:  # pragma: no cover - UI defensive branch
                 st.session_state["pv_profile_series"] = [0]
                 st.session_state["pv_profile_description"] = f"Failed to parse PV file: {exc}"
@@ -192,7 +195,9 @@ def render_pv_profile_section() -> None:
                         azimuth_deg=float(azimuth),
                         loss_percent=float(loss),
                     )
-                applied = apply_profile_to_power_profiles("pv", pv_series_15.tolist())
+                applied = apply_profile_to_power_profiles(
+                    ProfileColumn.PV_PRODUCTION.column_name, pv_series_15.tolist()
+                )
                 if not applied:
                     raise ValueError("Fetched PV profile could not be aligned to the app timeline.")
                 st.session_state["pv_profile_series"] = pv_series_15.tolist()

@@ -11,6 +11,7 @@ import streamlit.components.v1 as components
 from simuplex import DEFAULT_BATTERY_PARAMS, DEFAULT_CLOCK_PARAMS, DEFAULT_COMMERCIAL_PARAMS, DEFAULT_GRID_PARAMS
 from simuplex.applications.peak_shaving import DEFAULT_APPLICATION_PARAMS
 
+from asimplex.streamlit_app.profile_columns import ProfileColumn
 from asimplex.tools.simuplex_simulation import build_peak_shaving_simulator, build_simulation_plot_html
 
 
@@ -268,14 +269,18 @@ def render_simulation_plan_section() -> None:
 
         if st.button("Run simulation", type="primary", key="sim_plan_run_button"):
             profiles = st.session_state.get("power_profiles")
-            if not isinstance(profiles, pd.DataFrame) or "load" not in profiles.columns or "pv" not in profiles.columns:
+            required_columns = {
+                ProfileColumn.SITE_LOAD.column_name,
+                ProfileColumn.PV_PRODUCTION.column_name,
+            }
+            if not isinstance(profiles, pd.DataFrame) or not required_columns.issubset(set(profiles.columns)):
                 st.error("Load and PV profiles are required before running simulation.")
             else:
                 try:
                     st.info("Running simulator... tqdm progress is shown in terminal output.")
                     simulator = build_peak_shaving_simulator(
-                        load_profile=profiles["load"].astype(float).tolist(),
-                        pv_power_profile=profiles["pv"].astype(float).tolist(),
+                        load_profile=profiles[ProfileColumn.SITE_LOAD.column_name].astype(float).tolist(),
+                        pv_power_profile=profiles[ProfileColumn.PV_PRODUCTION.column_name].astype(float).tolist(),
                         simulation_plan_params=params,
                     )
                     with st.spinner("Simulation running..."):
