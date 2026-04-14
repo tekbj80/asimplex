@@ -206,10 +206,18 @@ def render_power_profiles_plot() -> None:
         ]
         available_summary_columns = [col for col in summary_columns if col in profiles.columns]
         metric_map: dict[str, dict[str, float]] = {}
+        llm_payload: dict[str, dict[str, object]] = {}
         if not available_summary_columns:
             st.dataframe(pd.DataFrame(columns=["metric"]), width="stretch", height=320)
         else:
             metric_map = {col: summarize_load_profile(profiles[col]) for col in available_summary_columns}
+            llm_payload = {
+                col: {
+                    "description": description[ProfileColumn(col)],
+                    "metrics": metric_map[col],
+                }
+                for col in available_summary_columns
+            }
             raw_metrics = list(next(iter(metric_map.values())).keys())
             summary_df = pd.DataFrame({"metric": [format_metric_name(m) for m in raw_metrics]})
             for col in available_summary_columns:
@@ -220,7 +228,7 @@ def render_power_profiles_plot() -> None:
             st.dataframe(summary_styler, width="stretch", height=320, hide_index=True)
 
         with st.expander("Profile summary JSON to be sent to LLM", expanded=False):
-            st.code(json.dumps(metric_map, indent=2), language="json")
+            st.code(json.dumps(llm_payload, indent=2), language="json")
 
 
 

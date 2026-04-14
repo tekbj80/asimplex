@@ -51,6 +51,10 @@ def _default_simulation_plan_params() -> dict:
                 "demand_charge": float(DEFAULT_COMMERCIAL_PARAMS["tariff"].tariff_above_2500["demand_charge"]),
             },
         },
+        "tariff_non_functional": {
+            "base_charge_eur_annual": 0.0,
+            "taxes_duties_percent_of_total": 0.0,
+        },
     }
 
 
@@ -69,6 +73,38 @@ def _serializable_defaults_snapshot() -> dict:
     for key, value in snapshot.items():
         serializable[key] = json.loads(json.dumps(value, default=str))
     return serializable
+
+
+def _apply_extracted_tariff_to_params(params: dict) -> tuple[dict, bool]:
+    electrical_tariff = st.session_state.get("electrical_tariff", {})
+    extracted = electrical_tariff.get("llm_extracted_tariff", {})
+    if not isinstance(extracted, dict):
+        return params, False
+
+    above_2500 = extracted.get("above_2500_flh", {})
+    below_2500 = extracted.get("below_2500_flh", {})
+    if not isinstance(above_2500, dict) or not isinstance(below_2500, dict):
+        return params, False
+
+    extracted_signature = json.dumps(extracted, sort_keys=True)
+    already_applied_signature = params.get("_last_extracted_tariff_signature")
+    if already_applied_signature == extracted_signature:
+        return params, True
+
+    try:
+        params["tariff"]["below_2500"]["grid_draw_cost"] = float(below_2500["energy_charge_eur_per_kwh"])
+        params["tariff"]["below_2500"]["demand_charge"] = float(below_2500["power_charge_eur_per_kw"])
+        params["tariff"]["above_2500"]["grid_draw_cost"] = float(above_2500["energy_charge_eur_per_kwh"])
+        params["tariff"]["above_2500"]["demand_charge"] = float(above_2500["power_charge_eur_per_kw"])
+        params.setdefault("tariff_non_functional", {})
+        params["tariff_non_functional"]["base_charge_eur_annual"] = float(extracted["base_charge_eur_annual"])
+        params["tariff_non_functional"]["taxes_duties_percent_of_total"] = float(
+            extracted["taxes_duties_percent_of_total"]
+        )
+        params["_last_extracted_tariff_signature"] = extracted_signature
+    except (KeyError, TypeError, ValueError):
+        return params, False
+    return params, True
 
 
 def render_simulation_plan_section() -> None:
@@ -208,6 +244,14 @@ def render_simulation_plan_section() -> None:
                 key="sim_plan_grid_max_power",
             )
         )
+        params, has_extracted_tariff = _apply_extracted_tariff_to_params(params)
+        electrical_tariff = st.session_state.get("electrical_tariff", {})
+        extracted_tariff = electrical_tariff.get("llm_extracted_tariff")
+        if has_extracted_tariff and isinstance(extracted_tariff, dict):
+            st.caption("Tariff inputs were updated from the uploaded tariff PDF. You can still edit them manually.")
+            with st.expander("Extracted tariff JSON", expanded=False):
+                st.json(extracted_tariff)
+
         t1, t2 = st.columns(2)
         with t1:
             st.markdown("`<2500`")
@@ -261,6 +305,27 @@ def render_simulation_plan_section() -> None:
                     key="sim_plan_tariff_above_demand",
                 )
             )
+
+        params.setdefault("tariff_non_functional", {})
+        params["tariff_non_functional"]["base_charge_eur_annual"] = float(
+            st.number_input(
+                "Base charge (EUR/year) - not functional yet",
+                min_value=0.0,
+                value=float(params["tariff_non_functional"].get("base_charge_eur_annual", 0.0)),
+                key="sim_plan_base_charge_eur_annual",
+            )
+        )
+        params["tariff_non_functional"]["taxes_duties_percent_of_total"] = float(
+            st.number_input(
+                "Taxes/duties (% of total) - not functional yet",
+                min_value=0.0,
+                max_value=100.0,
+                value=float(params["tariff_non_functional"].get("taxes_duties_percent_of_total", 0.0)),
+                step=0.1,
+                key="sim_plan_taxes_duties_percent_of_total",
+            )
+        )
+        st.caption("Note: Base charge and taxes/duties are displayed for planning only and are not used in simulation yet.")
 
         st.session_state["simulation_plan_params"] = params
 

@@ -12,6 +12,7 @@ authors = [{ name = "el_Boon" }]
 dependencies = [
     "bokeh",
     "folium",
+    "openai",
     "pandas",
     "plotly",
     "requests",
