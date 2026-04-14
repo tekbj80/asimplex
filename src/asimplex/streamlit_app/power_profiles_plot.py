@@ -227,6 +227,7 @@ def render_power_profiles_plot() -> None:
             )
             st.dataframe(summary_styler, width="stretch", height=320, hide_index=True)
 
+        st.session_state["profile_summary_json"] = llm_payload
         with st.expander("Profile summary JSON to be sent to LLM", expanded=False):
             st.code(json.dumps(llm_payload, indent=2), language="json")
 

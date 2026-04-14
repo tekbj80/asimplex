@@ -15,7 +15,7 @@ from asimplex.streamlit_app.profile_columns import ProfileColumn
 from asimplex.tools.simuplex_simulation import build_peak_shaving_simulator, build_simulation_plot_html
 
 
-def _default_simulation_plan_params() -> dict:
+def default_simulation_plan_params() -> dict:
     return {
         "clock": {
             "start_year": int(DEFAULT_CLOCK_PARAMS["start_time"].year),
@@ -58,6 +58,36 @@ def _default_simulation_plan_params() -> dict:
     }
 
 
+SIM_PLAN_WIDGET_BINDINGS: tuple[tuple[str, tuple[str, ...], object], ...] = (
+    ("sim_plan_start_year", ("clock", "start_year"), int),
+    ("sim_plan_timestep_minutes", ("clock", "timestep_minutes"), int),
+    ("sim_plan_grid_limit", ("application", "grid_limit"), float),
+    ("sim_plan_evo_threshold", ("application", "evo_threshold"), float),
+    ("sim_plan_backup_power_soc", ("application", "backup_power_soc"), float),
+    ("sim_plan_lsk_charge_from_grid", ("application", "lsk_charge_from_grid"), bool),
+    ("sim_plan_grid_sale_allowed", ("application", "grid_sale_allowed"), bool),
+    ("sim_plan_nominal_capacity", ("battery", "nominal_capacity"), float),
+    ("sim_plan_nominal_power", ("battery", "nominal_power"), float),
+    ("sim_plan_inverter_power", ("battery", "inverter_power"), float),
+    ("sim_plan_initial_soc", ("battery", "initial_soc"), float),
+    ("sim_plan_capex", ("battery", "capex"), float),
+    ("sim_plan_annual_opex", ("battery", "annual_opex"), float),
+    ("sim_plan_grid_max_power", ("grid", "max_power"), float),
+    ("sim_plan_tariff_below_grid_draw", ("tariff", "below_2500", "grid_draw_cost"), float),
+    ("sim_plan_tariff_below_feed_in", ("tariff", "below_2500", "feed_in_tariff"), float),
+    ("sim_plan_tariff_below_demand", ("tariff", "below_2500", "demand_charge"), float),
+    ("sim_plan_tariff_above_grid_draw", ("tariff", "above_2500", "grid_draw_cost"), float),
+    ("sim_plan_tariff_above_feed_in", ("tariff", "above_2500", "feed_in_tariff"), float),
+    ("sim_plan_tariff_above_demand", ("tariff", "above_2500", "demand_charge"), float),
+    ("sim_plan_base_charge_eur_annual", ("tariff_non_functional", "base_charge_eur_annual"), float),
+    (
+        "sim_plan_taxes_duties_percent_of_total",
+        ("tariff_non_functional", "taxes_duties_percent_of_total"),
+        float,
+    ),
+)
+
+
 def _serializable_defaults_snapshot() -> dict:
     snapshot = {
         "DEFAULT_CLOCK_PARAMS": copy.deepcopy(DEFAULT_CLOCK_PARAMS),
@@ -75,45 +105,117 @@ def _serializable_defaults_snapshot() -> dict:
     return serializable
 
 
-def _apply_extracted_tariff_to_params(params: dict) -> tuple[dict, bool]:
-    electrical_tariff = st.session_state.get("electrical_tariff", {})
-    extracted = electrical_tariff.get("llm_extracted_tariff", {})
-    if not isinstance(extracted, dict):
-        return params, False
+def _get_value_from_param_path(params: dict, path: tuple[str, ...]):
+    cursor = params
+    for part in path:
+        if not isinstance(cursor, dict) or part not in cursor:
+            return None
+        cursor = cursor[part]
+    return cursor
 
-    above_2500 = extracted.get("above_2500_flh", {})
-    below_2500 = extracted.get("below_2500_flh", {})
-    if not isinstance(above_2500, dict) or not isinstance(below_2500, dict):
-        return params, False
 
-    extracted_signature = json.dumps(extracted, sort_keys=True)
-    already_applied_signature = params.get("_last_extracted_tariff_signature")
-    if already_applied_signature == extracted_signature:
-        return params, True
+def update_simulation_plan_params() -> dict:
+    params = st.session_state.get("simulation_plan_params")
+    if not isinstance(params, dict):
+        params = default_simulation_plan_params()
+
+    for widget_key, path, caster in SIM_PLAN_WIDGET_BINDINGS:
+        value = _get_value_from_param_path(params, path)
+        if value is None:
+            continue
+        st.session_state[widget_key] = caster(value)
+
+    st.session_state["simulation_plan_params"] = params
+    return params
+
+
+def apply_extracted_tariff_to_simulation_plan_params(
+    *,
+    extracted_tariff: dict[str, object] | None,
+) -> dict:
+    params = st.session_state.get("simulation_plan_params")
+    if not isinstance(params, dict):
+        params = default_simulation_plan_params()
+
+    if not isinstance(extracted_tariff, dict):
+        st.session_state["simulation_plan_params"] = params
+        return params
 
     try:
-        params["tariff"]["below_2500"]["grid_draw_cost"] = float(below_2500["energy_charge_eur_per_kwh"])
-        params["tariff"]["below_2500"]["demand_charge"] = float(below_2500["power_charge_eur_per_kw"])
-        params["tariff"]["above_2500"]["grid_draw_cost"] = float(above_2500["energy_charge_eur_per_kwh"])
-        params["tariff"]["above_2500"]["demand_charge"] = float(above_2500["power_charge_eur_per_kw"])
+        below_2500 = extracted_tariff.get("below_2500_flh", {})
+        above_2500 = extracted_tariff.get("above_2500_flh", {})
+        if isinstance(below_2500, dict):
+            params["tariff"]["below_2500"]["grid_draw_cost"] = float(below_2500["energy_charge_eur_per_kwh"])
+            params["tariff"]["below_2500"]["demand_charge"] = float(below_2500["power_charge_eur_per_kw"])
+        if isinstance(above_2500, dict):
+            params["tariff"]["above_2500"]["grid_draw_cost"] = float(above_2500["energy_charge_eur_per_kwh"])
+            params["tariff"]["above_2500"]["demand_charge"] = float(above_2500["power_charge_eur_per_kw"])
         params.setdefault("tariff_non_functional", {})
-        params["tariff_non_functional"]["base_charge_eur_annual"] = float(extracted["base_charge_eur_annual"])
+        params["tariff_non_functional"]["base_charge_eur_annual"] = float(extracted_tariff["base_charge_eur_annual"])
         params["tariff_non_functional"]["taxes_duties_percent_of_total"] = float(
-            extracted["taxes_duties_percent_of_total"]
+            extracted_tariff["taxes_duties_percent_of_total"]
         )
-        params["_last_extracted_tariff_signature"] = extracted_signature
     except (KeyError, TypeError, ValueError):
-        return params, False
-    return params, True
+        st.session_state["simulation_plan_params"] = params
+        return params
+
+    st.session_state["simulation_plan_params"] = params
+    return params
+
+
+def _set_simulation_param_from_widget(path: tuple[str, ...], widget_key: str, caster) -> None:
+    params = st.session_state.get("simulation_plan_params")
+    if not isinstance(params, dict):
+        params = default_simulation_plan_params()
+
+    value = st.session_state.get(widget_key)
+    if value is None:
+        return
+    value = caster(value)
+
+    cursor = params
+    for part in path[:-1]:
+        cursor.setdefault(part, {})
+        if not isinstance(cursor[part], dict):
+            cursor[part] = {}
+        cursor = cursor[part]
+    cursor[path[-1]] = value
+    st.session_state["simulation_plan_params"] = params
+
+
+def run_simulation_plan_with_params(params: dict) -> tuple[bool, str]:
+    profiles = st.session_state.get("power_profiles")
+    required_columns = {
+        ProfileColumn.SITE_LOAD.column_name,
+        ProfileColumn.PV_PRODUCTION.column_name,
+    }
+    if not isinstance(profiles, pd.DataFrame) or not required_columns.issubset(set(profiles.columns)):
+        return False, "Load and PV profiles are required before running simulation."
+
+    try:
+        simulator = build_peak_shaving_simulator(
+            load_profile=profiles[ProfileColumn.SITE_LOAD.column_name].astype(float).tolist(),
+            pv_power_profile=profiles[ProfileColumn.PV_PRODUCTION.column_name].astype(float).tolist(),
+            simulation_plan_params=params,
+        )
+        simulator.run_simulation(in_jupyter=False, disable_tqdm=False, calculate_benchmarks=True)
+        benchmarks = simulator.benchmarks or {}
+        simulation_plot_html = build_simulation_plot_html(simulator, title="Simulation Plan Output")
+        st.session_state["simulation_plan_benchmarks"] = benchmarks
+        st.session_state["simulation_plan_plot_html"] = simulation_plot_html
+        st.session_state["simulation_plan_params"] = params
+        return True, "Simulation completed."
+    except Exception as exc:  # pragma: no cover - runtime dependent path
+        return False, f"Simulation failed: {exc}"
 
 
 def render_simulation_plan_section() -> None:
-    params = st.session_state.get("simulation_plan_params")
-    if not isinstance(params, dict):
-        params = _default_simulation_plan_params()
-        st.session_state["simulation_plan_params"] = params
+    params = update_simulation_plan_params()
     st.session_state.setdefault("simulation_plan_benchmarks", None)
     st.session_state.setdefault("simulation_plan_plot_html", None)
+
+    def _k(base: str) -> str:
+        return base
 
     with st.expander("Simulation Plan", expanded=False):
         st.markdown("**Clock**")
@@ -123,7 +225,9 @@ def render_simulation_plan_section() -> None:
                 min_value=2000,
                 max_value=2100,
                 value=int(params["clock"]["start_year"]),
-                key="sim_plan_start_year",
+                key=_k("sim_plan_start_year"),
+                on_change=_set_simulation_param_from_widget,
+                args=(("clock", "start_year"), _k("sim_plan_start_year"), int),
             )
         )
         params["clock"]["timestep_minutes"] = int(
@@ -132,7 +236,9 @@ def render_simulation_plan_section() -> None:
                 min_value=1,
                 max_value=60,
                 value=int(params["clock"]["timestep_minutes"]),
-                key="sim_plan_timestep_minutes",
+                key=_k("sim_plan_timestep_minutes"),
+                on_change=_set_simulation_param_from_widget,
+                args=(("clock", "timestep_minutes"), _k("sim_plan_timestep_minutes"), int),
             )
         )
 
@@ -142,17 +248,21 @@ def render_simulation_plan_section() -> None:
                 "Grid limit (kW)",
                 min_value=0.0,
                 value=float(params["application"]["grid_limit"]),
-                key="sim_plan_grid_limit",
+                key=_k("sim_plan_grid_limit"),
+                on_change=_set_simulation_param_from_widget,
+                args=(("application", "grid_limit"), _k("sim_plan_grid_limit"), float),
             )
         )
         params["application"]["evo_threshold"] = float(
             st.number_input(
                 "EVO threshold",
                 min_value=0.0,
-                max_value=2.0,
+                max_value=1.0,
                 value=float(params["application"]["evo_threshold"]),
                 step=0.01,
-                key="sim_plan_evo_threshold",
+                key=_k("sim_plan_evo_threshold"),
+                on_change=_set_simulation_param_from_widget,
+                args=(("application", "evo_threshold"), _k("sim_plan_evo_threshold"), float),
             )
         )
         params["application"]["backup_power_soc"] = float(
@@ -162,21 +272,27 @@ def render_simulation_plan_section() -> None:
                 max_value=1.0,
                 value=float(params["application"]["backup_power_soc"]),
                 step=0.01,
-                key="sim_plan_backup_power_soc",
+                key=_k("sim_plan_backup_power_soc"),
+                on_change=_set_simulation_param_from_widget,
+                args=(("application", "backup_power_soc"), _k("sim_plan_backup_power_soc"), float),
             )
         )
         params["application"]["lsk_charge_from_grid"] = bool(
             st.checkbox(
                 "LSK charge from grid",
                 value=bool(params["application"]["lsk_charge_from_grid"]),
-                key="sim_plan_lsk_charge_from_grid",
+                key=_k("sim_plan_lsk_charge_from_grid"),
+                on_change=_set_simulation_param_from_widget,
+                args=(("application", "lsk_charge_from_grid"), _k("sim_plan_lsk_charge_from_grid"), bool),
             )
         )
         params["application"]["grid_sale_allowed"] = bool(
             st.checkbox(
                 "Grid sale allowed",
                 value=bool(params["application"]["grid_sale_allowed"]),
-                key="sim_plan_grid_sale_allowed",
+                key=_k("sim_plan_grid_sale_allowed"),
+                on_change=_set_simulation_param_from_widget,
+                args=(("application", "grid_sale_allowed"), _k("sim_plan_grid_sale_allowed"), bool),
             )
         )
 
@@ -188,7 +304,9 @@ def render_simulation_plan_section() -> None:
                     "Nominal capacity (kWh)",
                     min_value=0.0,
                     value=float(params["battery"]["nominal_capacity"]),
-                    key="sim_plan_nominal_capacity",
+                    key=_k("sim_plan_nominal_capacity"),
+                    on_change=_set_simulation_param_from_widget,
+                    args=(("battery", "nominal_capacity"), _k("sim_plan_nominal_capacity"), float),
                 )
             )
             params["battery"]["nominal_power"] = float(
@@ -196,7 +314,9 @@ def render_simulation_plan_section() -> None:
                     "Nominal power (kW)",
                     min_value=0.0,
                     value=float(params["battery"]["nominal_power"]),
-                    key="sim_plan_nominal_power",
+                    key=_k("sim_plan_nominal_power"),
+                    on_change=_set_simulation_param_from_widget,
+                    args=(("battery", "nominal_power"), _k("sim_plan_nominal_power"), float),
                 )
             )
             params["battery"]["inverter_power"] = float(
@@ -204,7 +324,9 @@ def render_simulation_plan_section() -> None:
                     "Inverter power (kW)",
                     min_value=0.0,
                     value=float(params["battery"]["inverter_power"]),
-                    key="sim_plan_inverter_power",
+                    key=_k("sim_plan_inverter_power"),
+                    on_change=_set_simulation_param_from_widget,
+                    args=(("battery", "inverter_power"), _k("sim_plan_inverter_power"), float),
                 )
             )
         with c2:
@@ -215,7 +337,9 @@ def render_simulation_plan_section() -> None:
                     max_value=1.0,
                     value=float(params["battery"]["initial_soc"]),
                     step=0.01,
-                    key="sim_plan_initial_soc",
+                    key=_k("sim_plan_initial_soc"),
+                    on_change=_set_simulation_param_from_widget,
+                    args=(("battery", "initial_soc"), _k("sim_plan_initial_soc"), float),
                 )
             )
             params["battery"]["capex"] = float(
@@ -223,7 +347,9 @@ def render_simulation_plan_section() -> None:
                     "CAPEX",
                     min_value=0.0,
                     value=float(params["battery"]["capex"]),
-                    key="sim_plan_capex",
+                    key=_k("sim_plan_capex"),
+                    on_change=_set_simulation_param_from_widget,
+                    args=(("battery", "capex"), _k("sim_plan_capex"), float),
                 )
             )
             params["battery"]["annual_opex"] = float(
@@ -231,7 +357,9 @@ def render_simulation_plan_section() -> None:
                     "Annual OPEX",
                     min_value=0.0,
                     value=float(params["battery"]["annual_opex"]),
-                    key="sim_plan_annual_opex",
+                    key=_k("sim_plan_annual_opex"),
+                    on_change=_set_simulation_param_from_widget,
+                    args=(("battery", "annual_opex"), _k("sim_plan_annual_opex"), float),
                 )
             )
 
@@ -241,13 +369,14 @@ def render_simulation_plan_section() -> None:
                 "Grid max power (kW)",
                 min_value=0.0,
                 value=float(params["grid"]["max_power"]),
-                key="sim_plan_grid_max_power",
+                key=_k("sim_plan_grid_max_power"),
+                on_change=_set_simulation_param_from_widget,
+                args=(("grid", "max_power"), _k("sim_plan_grid_max_power"), float),
             )
         )
-        params, has_extracted_tariff = _apply_extracted_tariff_to_params(params)
         electrical_tariff = st.session_state.get("electrical_tariff", {})
         extracted_tariff = electrical_tariff.get("llm_extracted_tariff")
-        if has_extracted_tariff and isinstance(extracted_tariff, dict):
+        if isinstance(extracted_tariff, dict):
             st.caption("Tariff inputs were updated from the uploaded tariff PDF. You can still edit them manually.")
             with st.expander("Extracted tariff JSON", expanded=False):
                 st.json(extracted_tariff)
@@ -260,7 +389,9 @@ def render_simulation_plan_section() -> None:
                     "Grid draw cost (EUR/kWh)",
                     min_value=0.0,
                     value=float(params["tariff"]["below_2500"]["grid_draw_cost"]),
-                    key="sim_plan_tariff_below_grid_draw",
+                    key=_k("sim_plan_tariff_below_grid_draw"),
+                    on_change=_set_simulation_param_from_widget,
+                    args=(("tariff", "below_2500", "grid_draw_cost"), _k("sim_plan_tariff_below_grid_draw"), float),
                 )
             )
             params["tariff"]["below_2500"]["feed_in_tariff"] = float(
@@ -268,7 +399,9 @@ def render_simulation_plan_section() -> None:
                     "Feed-in tariff (EUR/kWh)",
                     min_value=0.0,
                     value=float(params["tariff"]["below_2500"]["feed_in_tariff"]),
-                    key="sim_plan_tariff_below_feed_in",
+                    key=_k("sim_plan_tariff_below_feed_in"),
+                    on_change=_set_simulation_param_from_widget,
+                    args=(("tariff", "below_2500", "feed_in_tariff"), _k("sim_plan_tariff_below_feed_in"), float),
                 )
             )
             params["tariff"]["below_2500"]["demand_charge"] = float(
@@ -276,7 +409,9 @@ def render_simulation_plan_section() -> None:
                     "Demand charge (EUR/kW)",
                     min_value=0.0,
                     value=float(params["tariff"]["below_2500"]["demand_charge"]),
-                    key="sim_plan_tariff_below_demand",
+                    key=_k("sim_plan_tariff_below_demand"),
+                    on_change=_set_simulation_param_from_widget,
+                    args=(("tariff", "below_2500", "demand_charge"), _k("sim_plan_tariff_below_demand"), float),
                 )
             )
         with t2:
@@ -286,7 +421,9 @@ def render_simulation_plan_section() -> None:
                     "Grid draw cost (EUR/kWh) ",
                     min_value=0.0,
                     value=float(params["tariff"]["above_2500"]["grid_draw_cost"]),
-                    key="sim_plan_tariff_above_grid_draw",
+                    key=_k("sim_plan_tariff_above_grid_draw"),
+                    on_change=_set_simulation_param_from_widget,
+                    args=(("tariff", "above_2500", "grid_draw_cost"), _k("sim_plan_tariff_above_grid_draw"), float),
                 )
             )
             params["tariff"]["above_2500"]["feed_in_tariff"] = float(
@@ -294,7 +431,9 @@ def render_simulation_plan_section() -> None:
                     "Feed-in tariff (EUR/kWh) ",
                     min_value=0.0,
                     value=float(params["tariff"]["above_2500"]["feed_in_tariff"]),
-                    key="sim_plan_tariff_above_feed_in",
+                    key=_k("sim_plan_tariff_above_feed_in"),
+                    on_change=_set_simulation_param_from_widget,
+                    args=(("tariff", "above_2500", "feed_in_tariff"), _k("sim_plan_tariff_above_feed_in"), float),
                 )
             )
             params["tariff"]["above_2500"]["demand_charge"] = float(
@@ -302,7 +441,9 @@ def render_simulation_plan_section() -> None:
                     "Demand charge (EUR/kW) ",
                     min_value=0.0,
                     value=float(params["tariff"]["above_2500"]["demand_charge"]),
-                    key="sim_plan_tariff_above_demand",
+                    key=_k("sim_plan_tariff_above_demand"),
+                    on_change=_set_simulation_param_from_widget,
+                    args=(("tariff", "above_2500", "demand_charge"), _k("sim_plan_tariff_above_demand"), float),
                 )
             )
 
@@ -312,7 +453,13 @@ def render_simulation_plan_section() -> None:
                 "Base charge (EUR/year) - not functional yet",
                 min_value=0.0,
                 value=float(params["tariff_non_functional"].get("base_charge_eur_annual", 0.0)),
-                key="sim_plan_base_charge_eur_annual",
+                key=_k("sim_plan_base_charge_eur_annual"),
+                on_change=_set_simulation_param_from_widget,
+                args=(
+                    ("tariff_non_functional", "base_charge_eur_annual"),
+                    _k("sim_plan_base_charge_eur_annual"),
+                    float,
+                ),
             )
         )
         params["tariff_non_functional"]["taxes_duties_percent_of_total"] = float(
@@ -322,7 +469,13 @@ def render_simulation_plan_section() -> None:
                 max_value=100.0,
                 value=float(params["tariff_non_functional"].get("taxes_duties_percent_of_total", 0.0)),
                 step=0.1,
-                key="sim_plan_taxes_duties_percent_of_total",
+                key=_k("sim_plan_taxes_duties_percent_of_total"),
+                on_change=_set_simulation_param_from_widget,
+                args=(
+                    ("tariff_non_functional", "taxes_duties_percent_of_total"),
+                    _k("sim_plan_taxes_duties_percent_of_total"),
+                    float,
+                ),
             )
         )
         st.caption("Note: Base charge and taxes/duties are displayed for planning only and are not used in simulation yet.")
@@ -333,30 +486,13 @@ def render_simulation_plan_section() -> None:
             st.code(json.dumps(_serializable_defaults_snapshot(), indent=2), language="json")
 
         if st.button("Run simulation", type="primary", key="sim_plan_run_button"):
-            profiles = st.session_state.get("power_profiles")
-            required_columns = {
-                ProfileColumn.SITE_LOAD.column_name,
-                ProfileColumn.PV_PRODUCTION.column_name,
-            }
-            if not isinstance(profiles, pd.DataFrame) or not required_columns.issubset(set(profiles.columns)):
-                st.error("Load and PV profiles are required before running simulation.")
+            st.info("Running simulator... tqdm progress is shown in terminal output.")
+            with st.spinner("Simulation running..."):
+                ok, msg = run_simulation_plan_with_params(params)
+            if ok:
+                st.success(msg)
             else:
-                try:
-                    st.info("Running simulator... tqdm progress is shown in terminal output.")
-                    simulator = build_peak_shaving_simulator(
-                        load_profile=profiles[ProfileColumn.SITE_LOAD.column_name].astype(float).tolist(),
-                        pv_power_profile=profiles[ProfileColumn.PV_PRODUCTION.column_name].astype(float).tolist(),
-                        simulation_plan_params=params,
-                    )
-                    with st.spinner("Simulation running..."):
-                        simulator.run_simulation(in_jupyter=False, disable_tqdm=False, calculate_benchmarks=True)
-                    benchmarks = simulator.benchmarks or {}
-                    simulation_plot_html = build_simulation_plot_html(simulator, title="Simulation Plan Output")
-                    st.session_state["simulation_plan_benchmarks"] = benchmarks
-                    st.session_state["simulation_plan_plot_html"] = simulation_plot_html
-                    st.success("Simulation completed.")
-                except Exception as exc:
-                    st.error(f"Simulation failed: {exc}")
+                st.error(msg)
 
         benchmarks = st.session_state.get("simulation_plan_benchmarks")
         if isinstance(benchmarks, dict) and benchmarks:

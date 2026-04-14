@@ -8,6 +8,7 @@ import pandas as pd
 import streamlit as st
 
 from asimplex.streamlit_app.profile_columns import ProfileColumn
+from asimplex.streamlit_app.simulation_plan_section import default_simulation_plan_params
 from asimplex.tools.calculations import calculate_full_hour_equivalent
 from asimplex.tools.formatting import format_metric_name, format_metric_value
 from asimplex.tools.csv_tool import BASE_INDEX_15MIN, csv_reader_format, normalize_series_to_15min_2023
@@ -32,18 +33,12 @@ def init_session_state() -> None:
     st.session_state.setdefault(
         "electrical_tariff",
         {
-            "lt_2500_hour_equivalent": {
-                "power_charge_eur_per_kw": 0.0,
-                "energy_charge_eur_per_kwh": 0.0,
-            },
-            "gt_2500_hour_equivalent": {
-                "power_charge_eur_per_kw": 0.0,
-                "energy_charge_eur_per_kwh": 0.0,
-            },
-            "other_charges_eur_per_kwh": 0.0,
-            "taxes_duties_percent_of_total": 0.0,
+            "selected_voltage_level": None,
+            "llm_extracted_tariff": None,
+            "llm_response_debug_text": "",
         },
     )
+    st.session_state.setdefault("simulation_plan_params", default_simulation_plan_params())
     if "power_profiles" not in st.session_state:
         st.session_state["power_profiles"] = pd.DataFrame(index=BASE_INDEX_15MIN.copy())
 

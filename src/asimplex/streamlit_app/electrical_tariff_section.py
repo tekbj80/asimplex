@@ -7,6 +7,10 @@ import os
 
 import streamlit as st
 from openai import OpenAI
+from asimplex.streamlit_app.simulation_plan_section import (
+    apply_extracted_tariff_to_simulation_plan_params,
+)
+
 VOLTAGE_LEVEL_OPTIONS = [
     "Umspannung Höchst-/ Hochspannung",
     "Hochspannung",
@@ -51,8 +55,8 @@ TARIFF_EXTRACTION_PROMPT_TEMPLATE = (
     "Extract tariff values from this PDF for the selected voltage level.\n"
     "Selected voltage level: {voltage_level}\n\n"
     "Return only valid JSON with numeric values and the exact keys:\n"
-    "above_2500_flh: {energy_charge_eur_per_kwh, power_charge_eur_per_kw},\n"
-    "below_2500_flh: {energy_charge_eur_per_kwh, power_charge_eur_per_kw},\n"
+    "above_2500_flh: {{energy_charge_eur_per_kwh, power_charge_eur_per_kw}},\n"
+    "below_2500_flh: {{energy_charge_eur_per_kwh, power_charge_eur_per_kw}},\n"
     "base_charge_eur_annual: include also the annual charges for the measurement point, Messstellenbetrieb,\n"
     "taxes_duties_percent_of_total.\n"
     "If a value cannot be found, return 0."
@@ -155,6 +159,9 @@ def render_electrical_tariff_section() -> None:
                             filename=uploaded_tariff_pdf.name,
                             voltage_level=selected_voltage_level,
                         )
+                    apply_extracted_tariff_to_simulation_plan_params(
+                        extracted_tariff=extracted_tariff,
+                    )
                     st.session_state["electrical_tariff"] = {
                         "selected_voltage_level": selected_voltage_level,
                         "llm_extracted_tariff": extracted_tariff,
