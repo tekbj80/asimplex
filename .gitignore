@@ -24,3 +24,9 @@ env/
 .vscode/
 .DS_Store
 Thumbs.db
+
+# Local SQLite state/log databases
+.asimplex_sessions.db
+.asimplex_sessions.db-*
+.asimplex_app_logs.db
+.asimplex_app_logs.db-*
