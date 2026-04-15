@@ -74,6 +74,30 @@ def _extract_json_object(text: str) -> dict[str, Any]:
     return {}
 
 
+def _extract_tool_invocations(messages: list[Any] | None) -> list[dict[str, Any]]:
+    if not messages:
+        return []
+    invocations: list[dict[str, Any]] = []
+    order = 0
+    for msg in messages:
+        tool_calls = getattr(msg, "tool_calls", None)
+        if isinstance(tool_calls, list):
+            for call in tool_calls:
+                if not isinstance(call, dict):
+                    continue
+                order += 1
+                args = call.get("args")
+                invocations.append(
+                    {
+                        "order": order,
+                        "tool_name": str(call.get("name", "") or ""),
+                        "tool_call_id": str(call.get("id", "") or ""),
+                        "args_preview": json.dumps(args, default=str)[:500] if args is not None else "",
+                    }
+                )
+    return invocations
+
+
 def run_tuning_agent(*, user_message: str, session_state: dict[str, Any]) -> dict[str, Any]:
     context_payloads = get_llm_simulation_context_payload(session_state)
     current_params = context_payloads.get("simulation_plan_params", {})
@@ -112,7 +136,9 @@ def run_tuning_agent(*, user_message: str, session_state: dict[str, Any]) -> dic
         response_format=ToolStrategy(AgentResponse),
     )
     result = agent.invoke({"messages": [{"role": "user", "content": user_message}]})
-    usage_in, usage_out = sum_usage_from_langchain_messages(result.get("messages"))
+    messages = result.get("messages")
+    usage_in, usage_out = sum_usage_from_langchain_messages(messages)
+    tool_invocations = _extract_tool_invocations(messages if isinstance(messages, list) else None)
 
     structured = result.get("structured_response")
     if isinstance(structured, AgentResponse):
@@ -128,7 +154,6 @@ def run_tuning_agent(*, user_message: str, session_state: dict[str, Any]) -> dic
         parsed = dict(structured)
     else:
         output_text = ""
-        messages = result.get("messages", [])
         if isinstance(messages, list) and messages:
             last = messages[-1]
             output_text = str(getattr(last, "content", ""))
@@ -172,5 +197,6 @@ def run_tuning_agent(*, user_message: str, session_state: dict[str, Any]) -> dic
         parsed["next_step"] = "confirm"
 
     parsed["usage"] = {"input_tokens": usage_in, "output_tokens": usage_out}
+    parsed["tool_invocations"] = tool_invocations
     return parsed
 

@@ -55,7 +55,7 @@ def record_llm_usage(
     model_name: str = "gpt-4.1-mini",
     input_tokens: int | None,
     output_tokens: int | None,
-) -> None:
+) -> dict[str, Any]:
     inp = _coerce_int(input_tokens)
     out = _coerce_int(output_tokens)
     usage = session_state.setdefault("llm_usage", default_llm_usage())
@@ -70,17 +70,17 @@ def record_llm_usage(
     if not isinstance(rows, list):
         rows = []
         usage["rows"] = rows
-    rows.append(
-        {
-            "time": datetime.now().strftime("%H:%M:%S"),
-            "action": str(label),
-            "model": str(model_name),
-            "ingest_tokens": inp,
-            "output_tokens": out,
-            "total_tokens": inp + out,
-            "cost_eur": cost_eur,
-        }
-    )
+    row = {
+        "time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "action": str(label),
+        "model": str(model_name),
+        "ingest_tokens": inp,
+        "output_tokens": out,
+        "total_tokens": inp + out,
+        "cost_eur": cost_eur,
+    }
+    rows.append(row)
+    return row
 
 
 def sum_usage_from_langchain_messages(messages: list[Any] | None) -> tuple[int, int]:

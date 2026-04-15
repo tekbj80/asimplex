@@ -10,7 +10,8 @@ import streamlit as st
 
 from asimplex.agent.tools import apply_parameter_patch, propose_parameter_patch
 from asimplex.llm_usage import record_llm_usage
-from asimplex.persistence.session_store import create_version
+from asimplex.observability.app_log_store import log_event
+from asimplex.persistence.session_store import append_llm_usage_event, create_version
 from asimplex.streamlit_app.peak_shaving_table import render_peak_shaving_table
 from asimplex.streamlit_app.power_profiles_plot import render_power_profiles_plot
 from asimplex.streamlit_app.session_state import init_session_state
@@ -43,20 +44,37 @@ def render_chat_shell() -> None:
 
                     agent_result = run_tuning_agent(user_message=user_message, session_state=st.session_state)
                     usage = agent_result.get("usage")
+                    tool_invocations = (
+                        agent_result.get("tool_invocations")
+                        if isinstance(agent_result.get("tool_invocations"), list)
+                        else []
+                    )
                     if isinstance(usage, dict):
-                        record_llm_usage(
+                        row = record_llm_usage(
                             st.session_state,
                             label="Chat agent",
                             model_name=os.getenv("ASIMPLEX_AGENT_MODEL", "gpt-4.1-mini"),
                             input_tokens=usage.get("input_tokens"),
                             output_tokens=usage.get("output_tokens"),
                         )
+                        project_name = str(st.session_state.get("project_name", "") or "")
+                        if project_name:
+                            append_llm_usage_event(project_name, row)
                     reasoning = str(agent_result.get("reasoning", "")).strip()
                     proposed_params = agent_result.get("proposed_params", {})
                     next_step = str(agent_result.get("next_step", "insufficient_data"))
                     patch = agent_result.get("patch", {})
                     issues = agent_result.get("issues", [])
                     selected_battery = agent_result.get("selected_battery")
+                    log_event(
+                        project_name=str(st.session_state.get("project_name", "") or ""),
+                        source="chat_agent",
+                        event_type="agent_turn",
+                        status="success",
+                        tool_invocations=tool_invocations,
+                        message="Agent response generated.",
+                        payload={"next_step": next_step},
+                    )
 
                     response_parts = []
                     if reasoning:
@@ -83,6 +101,14 @@ def render_chat_shell() -> None:
                     err = f"Agent request failed: {exc}"
                     st.error(err)
                     history.append({"role": "assistant", "content": err})
+                    log_event(
+                        project_name=str(st.session_state.get("project_name", "") or ""),
+                        source="chat_agent",
+                        event_type="agent_turn",
+                        status="error",
+                        error=str(exc),
+                        message="Agent request failed.",
+                    )
 
     pending = st.session_state.get("agent_pending_proposal")
     if isinstance(pending, dict):
@@ -131,6 +157,14 @@ def render_chat_shell() -> None:
                         params=updated_params if isinstance(updated_params, dict) else {},
                         patch=patch if isinstance(patch, dict) else {},
                     )
+                log_event(
+                    project_name=project_name,
+                    source="chat_agent",
+                    event_type="agent_apply_patch",
+                    status="success",
+                    message="Confirmed agent proposal and applied parameter patch.",
+                    payload={"patch_keys": sorted(list(patch.keys())) if isinstance(patch, dict) else []},
+                )
                 with st.spinner("Applying changes and running simulation..."):
                     ok, msg = run_simulation_plan_with_params(updated_params)
                 history.append({"role": "assistant", "content": msg})

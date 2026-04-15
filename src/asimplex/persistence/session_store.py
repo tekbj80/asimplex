@@ -4,14 +4,27 @@ from __future__ import annotations
 
 import json
 import sqlite3
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+from zoneinfo import ZoneInfo
 
 DB_PATH = Path(__file__).resolve().parents[3] / ".asimplex_sessions.db"
 
 
 def _connect() -> sqlite3.Connection:
     return sqlite3.connect(DB_PATH)
+
+
+def _sqlite_utc_to_berlin(value: Any) -> str:
+    raw = str(value or "").strip()
+    if not raw:
+        return ""
+    try:
+        dt_utc = datetime.strptime(raw, "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc)
+        return dt_utc.astimezone(ZoneInfo("Europe/Berlin")).strftime("%Y-%m-%d %H:%M:%S")
+    except Exception:
+        return raw
 
 
 def init_db() -> None:
@@ -68,6 +81,23 @@ def init_db() -> None:
                 extracted_tariff_json TEXT NOT NULL,
                 updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY(session_id) REFERENCES projects(session_id)
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS llm_usage_events (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                project_name TEXT NOT NULL,
+                created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                action TEXT NOT NULL,
+                model TEXT NOT NULL,
+                ingest_tokens INTEGER NOT NULL,
+                output_tokens INTEGER NOT NULL,
+                total_tokens INTEGER NOT NULL,
+                cost_eur REAL NOT NULL,
+                meta_json TEXT,
+                FOREIGN KEY(project_name) REFERENCES projects(session_id)
             )
             """
         )
@@ -187,7 +217,7 @@ def list_versions(project_name: str, limit: int = 100) -> list[dict[str, Any]]:
         out.append(
             {
                 "version_no": int(version_no),
-                "created_at": str(created_at or ""),
+                "created_at": _sqlite_utc_to_berlin(created_at),
                 "source": str(source or ""),
                 "note": str(note or ""),
             }
@@ -214,7 +244,7 @@ def get_latest_params(project_name: str) -> dict[str, Any] | None:
     return {
         "params": json.loads(params_json) if params_json else {},
         "version_no": int(version_no),
-        "created_at": str(created_at or ""),
+        "created_at": _sqlite_utc_to_berlin(created_at),
         "source": str(source or ""),
         "note": str(note or ""),
     }
@@ -239,7 +269,7 @@ def get_version_by_no(project_name: str, version_no: int) -> dict[str, Any] | No
         "params": json.loads(params_json) if params_json else {},
         "patch": json.loads(patch_json) if patch_json else {},
         "version_no": int(version_no),
-        "created_at": str(created_at or ""),
+        "created_at": _sqlite_utc_to_berlin(created_at),
         "source": str(source or ""),
         "note": str(note or ""),
     }
@@ -336,8 +366,8 @@ def get_profile_snapshot(project_name: str, profile_type: str) -> dict[str, Any]
         "parse_attempts": json.loads(row[3]) if row[3] else [],
         "metadata": json.loads(row[4]) if row[4] else {},
         "reason_text": str(row[5] or ""),
-        "created_at": str(row[6] or ""),
-        "updated_at": str(row[7] or ""),
+        "created_at": _sqlite_utc_to_berlin(row[6]),
+        "updated_at": _sqlite_utc_to_berlin(row[7]),
     }
 
 
@@ -388,8 +418,85 @@ def get_tariff_snapshot(project_name: str) -> dict[str, Any] | None:
         "filename": str(row[0] or ""),
         "selected_voltage_level": str(row[1] or ""),
         "extracted_tariff": json.loads(row[2]) if row[2] else {},
-        "updated_at": str(row[3] or ""),
+        "updated_at": _sqlite_utc_to_berlin(row[3]),
     }
+
+
+def append_llm_usage_event(project_name: str, row: dict[str, Any]) -> None:
+    normalized_name = normalize_project_name(project_name)
+    if not normalized_name:
+        return
+    action = str(row.get("action", "") or "")
+    model = str(row.get("model", "") or "")
+    if not action or not model:
+        return
+    ingest_tokens = int(row.get("ingest_tokens", 0) or 0)
+    output_tokens = int(row.get("output_tokens", 0) or 0)
+    total_tokens = int(row.get("total_tokens", ingest_tokens + output_tokens) or 0)
+    cost_eur = float(row.get("cost_eur", 0.0) or 0.0)
+    event_time = str(row.get("time", "") or "").strip()
+    meta = row.get("meta") if isinstance(row.get("meta"), dict) else {}
+    with _connect() as conn:
+        conn.execute(
+            """
+            INSERT INTO llm_usage_events(
+                project_name, created_at, action, model, ingest_tokens, output_tokens, total_tokens, cost_eur, meta_json
+            ) VALUES (?, COALESCE(NULLIF(?, ''), CURRENT_TIMESTAMP), ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                normalized_name,
+                event_time,
+                action,
+                model,
+                ingest_tokens,
+                output_tokens,
+                total_tokens,
+                cost_eur,
+                json.dumps(meta),
+            ),
+        )
+        conn.commit()
+
+
+def list_llm_usage_events(project_name: str, limit: int = 1000) -> list[dict[str, Any]]:
+    normalized_name = normalize_project_name(project_name)
+    if not normalized_name:
+        return []
+    with _connect() as conn:
+        rows = conn.execute(
+            """
+            SELECT created_at, action, model, ingest_tokens, output_tokens, total_tokens, cost_eur, meta_json
+            FROM llm_usage_events
+            WHERE project_name = ?
+            ORDER BY id ASC
+            LIMIT ?
+            """,
+            (normalized_name, int(limit)),
+        ).fetchall()
+    out: list[dict[str, Any]] = []
+    for created_at, action, model, ingest_tokens, output_tokens, total_tokens, cost_eur, meta_json in rows:
+        out.append(
+            {
+                "time": _sqlite_utc_to_berlin(created_at),
+                "action": str(action or ""),
+                "model": str(model or ""),
+                "ingest_tokens": int(ingest_tokens or 0),
+                "output_tokens": int(output_tokens or 0),
+                "total_tokens": int(total_tokens or 0),
+                "cost_eur": float(cost_eur or 0.0),
+                "meta": json.loads(meta_json) if meta_json else {},
+            }
+        )
+    return out
+
+
+def clear_llm_usage_events(project_name: str) -> None:
+    normalized_name = normalize_project_name(project_name)
+    if not normalized_name:
+        return
+    with _connect() as conn:
+        conn.execute("DELETE FROM llm_usage_events WHERE project_name = ?", (normalized_name,))
+        conn.commit()
 
 
 # Backward-compatible aliases while the rest of the app migrates terminology.

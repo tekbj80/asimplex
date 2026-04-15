@@ -7,6 +7,7 @@ from io import BytesIO
 import pandas as pd
 import streamlit as st
 
+from asimplex.observability.app_log_store import log_event
 from asimplex.persistence.session_store import get_profile_snapshot, save_profile_snapshot
 from asimplex.streamlit_app.profile_columns import ProfileColumn
 from asimplex.tools.calculations import calculate_full_hour_equivalent
@@ -157,11 +158,28 @@ def render_load_profile_section() -> None:
                             st.info("Load profile already existed for this project and has been overwritten.")
                         else:
                             st.success("Load profile saved to project storage.")
+                        log_event(
+                            project_name=project_name,
+                            source="load_profile",
+                            event_type="save_profile_snapshot",
+                            status="success",
+                            message="Load profile snapshot saved.",
+                            payload={"filename": uploaded_file.name, "overwritten": overwritten},
+                        )
             except Exception as exc:  # pragma: no cover - UI defensive branch
                 st.session_state["load_profile_series"] = [0]
                 st.session_state["load_profile_description"] = f"Failed to parse file: {exc}"
                 st.session_state["load_profile_filename"] = uploaded_file.name
                 st.session_state["load_profile_parse_attempts"] = None
+                log_event(
+                    project_name=str(st.session_state.get("project_name", "") or ""),
+                    source="load_profile",
+                    event_type="save_profile_snapshot",
+                    status="error",
+                    error=str(exc),
+                    message="Load profile parsing/saving failed.",
+                    payload={"filename": uploaded_file.name},
+                )
 
         description = st.session_state.get("load_profile_description")
         parse_attempts = st.session_state.get("load_profile_parse_attempts")

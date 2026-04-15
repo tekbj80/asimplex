@@ -10,6 +10,7 @@ import streamlit as st
 from simuplex import DEFAULT_BATTERY_PARAMS, DEFAULT_CLOCK_PARAMS, DEFAULT_COMMERCIAL_PARAMS, DEFAULT_GRID_PARAMS
 from simuplex.applications.peak_shaving import DEFAULT_APPLICATION_PARAMS
 
+from asimplex.observability.app_log_store import log_event
 from asimplex.persistence.session_store import create_version, get_version_by_no, list_versions
 from asimplex.streamlit_app.profile_columns import ProfileColumn
 from asimplex.tools.simuplex_simulation import build_peak_shaving_simulator, build_simulation_plot_html
@@ -529,6 +530,14 @@ def render_simulation_plan_section() -> None:
                     params=st.session_state.get("simulation_plan_params", {}),
                     patch={},
                 )
+                log_event(
+                    project_name=project_name,
+                    source="simulation_plan",
+                    event_type="create_version",
+                    status="success",
+                    message=f"Manual simulation version saved as v{version_no}.",
+                    payload={"version_no": version_no},
+                )
                 st.success(f"Saved version v{version_no}.")
                 st.rerun()
 
@@ -543,7 +552,23 @@ def render_simulation_plan_section() -> None:
                     selected_params = selected_payload.get("params", {})
                     if isinstance(selected_params, dict):
                         st.session_state["simulation_plan_params"] = selected_params
+                        log_event(
+                            project_name=project_name,
+                            source="simulation_plan",
+                            event_type="load_version",
+                            status="success",
+                            message=f"Loaded simulation version v{selected_version_no}.",
+                            payload={"version_no": int(selected_version_no)},
+                        )
                         st.success(f"Loaded version v{selected_version_no}.")
                         st.rerun()
                 else:
                     st.error("Could not load selected version.")
+                    log_event(
+                        project_name=project_name,
+                        source="simulation_plan",
+                        event_type="load_version",
+                        status="error",
+                        message="Failed to load selected simulation version.",
+                        payload={"version_no": int(selected_version_no)},
+                    )

@@ -4,12 +4,14 @@ from __future__ import annotations
 
 import json
 import os
+from typing import Any
 
 import streamlit as st
 from openai import OpenAI
 
 from asimplex.llm_usage import record_llm_usage
-from asimplex.persistence.session_store import create_version, save_tariff_snapshot
+from asimplex.observability.app_log_store import log_event
+from asimplex.persistence.session_store import append_llm_usage_event, create_version, save_tariff_snapshot
 from asimplex.streamlit_app.simulation_plan_section import (
     apply_extracted_tariff_to_simulation_plan_params,
 )
@@ -46,12 +48,16 @@ TARIFF_JSON_SCHEMA = {
         },
         "base_charge_eur_annual": {"type": "number"},
         "taxes_duties_percent_of_total": {"type": "number"},
+        "extraction_confidence": {"type": "number", "minimum": 0.0, "maximum": 1.0},
+        "missing_fields": {"type": "array", "items": {"type": "string"}},
     },
     "required": [
         "above_2500_flh",
         "below_2500_flh",
         "base_charge_eur_annual",
         "taxes_duties_percent_of_total",
+        "extraction_confidence",
+        "missing_fields",
     ],
 }
 TARIFF_EXTRACTION_PROMPT_TEMPLATE = (
@@ -61,9 +67,44 @@ TARIFF_EXTRACTION_PROMPT_TEMPLATE = (
     "above_2500_flh: {{energy_charge_eur_per_kwh, power_charge_eur_per_kw}},\n"
     "below_2500_flh: {{energy_charge_eur_per_kwh, power_charge_eur_per_kw}},\n"
     "base_charge_eur_annual: include also the annual charges for the measurement point, Messstellenbetrieb,\n"
-    "taxes_duties_percent_of_total.\n"
-    "If a value cannot be found, return 0."
+    "taxes_duties_percent_of_total,\n"
+    "extraction_confidence (0..1),\n"
+    "missing_fields (array of missing field names).\n"
+    "Do not invent values. If values are missing, include them in missing_fields."
 )
+
+
+def _validate_extracted_tariff_payload(extracted_tariff: dict[str, Any], parsed: dict[str, Any]) -> None:
+    if not isinstance(extracted_tariff, dict):
+        raise ValueError("Tariff extraction returned invalid payload type.")
+    if not isinstance(parsed, dict):
+        raise ValueError("Tariff extraction parsing failed.")
+
+    missing_fields = parsed.get("missing_fields", [])
+    extraction_confidence = float(parsed.get("extraction_confidence", 0.0) or 0.0)
+    if not isinstance(missing_fields, list):
+        raise ValueError("Tariff extraction missing_fields must be a list.")
+    if missing_fields:
+        raise ValueError(f"Missing required tariff fields: {', '.join(str(x) for x in missing_fields)}")
+    if extraction_confidence < 0.5:
+        raise ValueError(f"Extraction confidence too low ({extraction_confidence:.2f}).")
+
+    below = extracted_tariff.get("below_2500_flh", {})
+    above = extracted_tariff.get("above_2500_flh", {})
+    if not isinstance(below, dict) or not isinstance(above, dict):
+        raise ValueError("Tariff blocks are malformed.")
+    numeric_values = [
+        float(below.get("energy_charge_eur_per_kwh", 0.0) or 0.0),
+        float(below.get("power_charge_eur_per_kw", 0.0) or 0.0),
+        float(above.get("energy_charge_eur_per_kwh", 0.0) or 0.0),
+        float(above.get("power_charge_eur_per_kw", 0.0) or 0.0),
+        float(extracted_tariff.get("base_charge_eur_annual", 0.0) or 0.0),
+        float(extracted_tariff.get("taxes_duties_percent_of_total", 0.0) or 0.0),
+    ]
+    if all(v == 0.0 for v in numeric_values):
+        raise ValueError("Extraction appears invalid: all tariff values are zero.")
+    if max(numeric_values[:4]) <= 0.0:
+        raise ValueError("Extraction appears invalid: missing energy/power charge values.")
 
 
 def _extract_tariff_with_llm(
@@ -121,6 +162,7 @@ def _extract_tariff_with_llm(
         "base_charge_eur_annual": float(parsed["base_charge_eur_annual"]),
         "taxes_duties_percent_of_total": float(parsed["taxes_duties_percent_of_total"]),
     }
+    _validate_extracted_tariff_payload(extracted, parsed)
     usage_info: dict[str, int] | None = None
     usage_obj = getattr(llm_response, "usage", None)
     if usage_obj is not None:
@@ -174,13 +216,16 @@ def render_electrical_tariff_section() -> None:
                             voltage_level=selected_voltage_level,
                         )
                     if isinstance(usage, dict):
-                        record_llm_usage(
+                        row = record_llm_usage(
                             st.session_state,
                             label="Tariff extraction",
                             model_name="gpt-4.1-mini",
                             input_tokens=usage.get("input_tokens"),
                             output_tokens=usage.get("output_tokens"),
                         )
+                        project_name = str(st.session_state.get("project_name", "") or "")
+                        if project_name:
+                            append_llm_usage_event(project_name, row)
                     apply_extracted_tariff_to_simulation_plan_params(
                         extracted_tariff=extracted_tariff,
                     )
@@ -208,10 +253,33 @@ def render_electrical_tariff_section() -> None:
                             params=st.session_state.get("simulation_plan_params", {}),
                             patch={"extracted_tariff": extracted_tariff} if isinstance(extracted_tariff, dict) else {},
                         )
+                    log_event(
+                        project_name=project_name,
+                        source="tariff_extraction",
+                        event_type="extract_tariff",
+                        status="success",
+                        message="Tariff extracted and applied.",
+                        payload={
+                            "filename": uploaded_tariff_pdf.name,
+                            "selected_voltage_level": selected_voltage_level,
+                        },
+                    )
                     st.success("Tariff values extracted.")
                 except Exception as exc:
                     llm_response_debug_text = str(exc)
                     st.error(f"Extraction failed: {exc}")
+                    log_event(
+                        project_name=str(st.session_state.get("project_name", "") or ""),
+                        source="tariff_extraction",
+                        event_type="extract_tariff",
+                        status="error",
+                        error=str(exc),
+                        message="Tariff extraction failed. No state changes were applied.",
+                        payload={
+                            "filename": getattr(uploaded_tariff_pdf, "name", ""),
+                            "selected_voltage_level": selected_voltage_level,
+                        },
+                    )
 
         if isinstance(extracted_tariff, dict):
             st.info("Extracted values have been automatically updated to the simulation inputs.")

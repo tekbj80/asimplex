@@ -11,6 +11,7 @@ import streamlit as st
 from streamlit_folium import st_folium
 
 from asimplex.constants import HOUR_FRAC
+from asimplex.observability.app_log_store import log_event
 from asimplex.persistence.session_store import get_profile_snapshot, save_profile_snapshot
 from asimplex.streamlit_app.load_profile_section import (
     apply_profile_to_power_profiles,
@@ -129,11 +130,28 @@ def render_pv_profile_section() -> None:
                             st.info("PV profile already existed for this project and has been overwritten.")
                         else:
                             st.success("PV profile saved to project storage.")
+                        log_event(
+                            project_name=project_name,
+                            source="pv_profile",
+                            event_type="save_profile_snapshot",
+                            status="success",
+                            message="PV profile snapshot saved from CSV upload.",
+                            payload={"filename": uploaded_file.name, "overwritten": overwritten},
+                        )
             except Exception as exc:  # pragma: no cover - UI defensive branch
                 st.session_state["pv_profile_series"] = [0]
                 st.session_state["pv_profile_description"] = f"Failed to parse PV file: {exc}"
                 st.session_state["pv_profile_filename"] = uploaded_file.name
                 st.session_state["pv_profile_parse_attempts"] = None
+                log_event(
+                    project_name=str(st.session_state.get("project_name", "") or ""),
+                    source="pv_profile",
+                    event_type="save_profile_snapshot",
+                    status="error",
+                    error=str(exc),
+                    message="PV profile CSV parsing/saving failed.",
+                    payload={"filename": uploaded_file.name},
+                )
 
         st.markdown("**Map**")
         m = folium.Map(
@@ -260,9 +278,25 @@ def render_pv_profile_section() -> None:
                         st.info("PV profile already existed for this project and has been overwritten.")
                     else:
                         st.success("PV profile saved to project storage.")
+                    log_event(
+                        project_name=project_name,
+                        source="pv_profile",
+                        event_type="save_profile_snapshot",
+                        status="success",
+                        message="PV profile snapshot saved from PVGIS fetch.",
+                        payload={"filename": "PVGIS seriescalc", "overwritten": overwritten},
+                    )
                 st.success(f"Fetched and stored {len(pv_series_15)} PV rows.")
             except Exception as exc:
                 st.error(f"Request failed: {exc}")
+                log_event(
+                    project_name=str(st.session_state.get("project_name", "") or ""),
+                    source="pv_profile",
+                    event_type="save_profile_snapshot",
+                    status="error",
+                    error=str(exc),
+                    message="PVGIS fetch/saving failed.",
+                )
 
         description = st.session_state.get("pv_profile_description")
         parse_attempts = st.session_state.get("pv_profile_parse_attempts")

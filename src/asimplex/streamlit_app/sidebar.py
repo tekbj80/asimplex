@@ -8,12 +8,14 @@ import streamlit as st
 from asimplex.persistence.session_store import (
     create_project,
     get_latest_params,
+    list_llm_usage_events,
     get_profile_snapshot,
     get_tariff_snapshot,
     init_db,
     list_project_names,
     project_exists,
 )
+from asimplex.llm_usage import default_llm_usage
 from asimplex.streamlit_app.electrical_tariff_section import (
     VOLTAGE_LEVEL_OPTIONS,
     render_electrical_tariff_section,
@@ -45,6 +47,7 @@ def _hydrate_profiles_for_project(project_name: str) -> None:
     st.session_state["pv_profile_reason_text"] = ""
     st.session_state["pv_profile_created_at"] = ""
     st.session_state["pv_profile_updated_at"] = ""
+    usage_state = default_llm_usage()
 
     if isinstance(load_snapshot, dict):
         series = load_snapshot.get("series", [])
@@ -106,6 +109,13 @@ def _hydrate_profiles_for_project(project_name: str) -> None:
         latest_params = latest_simulation.get("params")
         if isinstance(latest_params, dict) and latest_params:
             st.session_state["simulation_plan_params"] = latest_params
+    usage_rows = list_llm_usage_events(project_name, limit=5000)
+    if isinstance(usage_rows, list) and usage_rows:
+        usage_state["rows"] = usage_rows
+        usage_state["total_input"] = sum(int(r.get("ingest_tokens", 0) or 0) for r in usage_rows)
+        usage_state["total_output"] = sum(int(r.get("output_tokens", 0) or 0) for r in usage_rows)
+        usage_state["total_cost_eur"] = sum(float(r.get("cost_eur", 0.0) or 0.0) for r in usage_rows)
+    st.session_state["llm_usage"] = usage_state
     update_simulation_plan_params()
 
 def render_project_session_selector() -> None:
