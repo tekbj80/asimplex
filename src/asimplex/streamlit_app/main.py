@@ -19,6 +19,7 @@ from asimplex.streamlit_app.simulation_plan_section import (
     render_simulation_plan_section,
     run_simulation_plan_with_params,
 )
+from asimplex.streamlit_app.simulation_results_section import render_simulation_results_section
 
 
 def render_chat_shell() -> None:
@@ -151,6 +152,7 @@ def main() -> None:
     render_power_profiles_plot()
     render_peak_shaving_table()
     render_simulation_plan_section()
+    render_simulation_results_section()
     render_chat_shell()
 
 

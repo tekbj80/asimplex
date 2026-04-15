@@ -7,7 +7,6 @@ import json
 
 import pandas as pd
 import streamlit as st
-import streamlit.components.v1 as components
 from simuplex import DEFAULT_BATTERY_PARAMS, DEFAULT_CLOCK_PARAMS, DEFAULT_COMMERCIAL_PARAMS, DEFAULT_GRID_PARAMS
 from simuplex.applications.peak_shaving import DEFAULT_APPLICATION_PARAMS
 
@@ -485,29 +484,6 @@ def render_simulation_plan_section() -> None:
 
         if st.checkbox("Show default dictionaries", value=False, key="sim_plan_show_defaults"):
             st.code(json.dumps(_serializable_defaults_snapshot(), indent=2), language="json")
-
-        if st.button("Run simulation", type="primary", key="sim_plan_run_button"):
-            st.info("Running simulator... tqdm progress is shown in terminal output.")
-            with st.spinner("Simulation running..."):
-                ok, msg = run_simulation_plan_with_params(params)
-            if ok:
-                st.success(msg)
-            else:
-                st.error(msg)
-
-        benchmarks = st.session_state.get("simulation_plan_benchmarks")
-        if isinstance(benchmarks, dict) and benchmarks:
-            with st.expander("Simulation Benchmarks", expanded=True):
-                benchmark_df = pd.DataFrame(
-                    {"benchmark": list(benchmarks.keys()), "value": list(benchmarks.values())}
-                )
-                st.dataframe(benchmark_df, width="stretch", hide_index=True)
-
-        simulation_plot_html = st.session_state.get("simulation_plan_plot_html")
-        if isinstance(simulation_plot_html, str) and simulation_plot_html.strip():
-            with st.expander("Simulation Interactive Plot", expanded=True):
-                st.markdown("**Simulation Interactive Plot**")
-                components.html(simulation_plot_html, height=850, scrolling=True)
 
         st.markdown("---")
         st.markdown("**Simulation Parameter Versions**")
