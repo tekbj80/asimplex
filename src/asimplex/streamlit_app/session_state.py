@@ -36,6 +36,8 @@ def init_session_state() -> None:
             "selected_voltage_level": None,
             "llm_extracted_tariff": None,
             "llm_response_debug_text": "",
+            "source_filename": "",
+            "loaded_from_session": False,
         },
     )
     st.session_state.setdefault("llm_usage", default_llm_usage())

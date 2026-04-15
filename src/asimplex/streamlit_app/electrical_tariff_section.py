@@ -9,6 +9,7 @@ import streamlit as st
 from openai import OpenAI
 
 from asimplex.llm_usage import record_llm_usage
+from asimplex.persistence.session_store import save_tariff_snapshot
 from asimplex.streamlit_app.simulation_plan_section import (
     apply_extracted_tariff_to_simulation_plan_params,
 )
@@ -152,6 +153,15 @@ def render_electrical_tariff_section() -> None:
         )
         extracted_tariff = tariff_state.get("llm_extracted_tariff")
         llm_response_debug_text = str(tariff_state.get("llm_response_debug_text", ""))
+        source_filename = str(tariff_state.get("source_filename", "") or "")
+        loaded_from_session = bool(tariff_state.get("loaded_from_session", False))
+        if source_filename:
+            st.caption(f"Loaded file: `{source_filename}`")
+        if loaded_from_session:
+            st.warning(
+                "Tariff values were loaded from the last saved session state. "
+                "These may not match the currently uploaded file, this could be due to manual edits."
+            )
         if st.button("Extract tariff from PDF", key="tariff_extract_button", type="secondary"):
             if uploaded_tariff_pdf is None:
                 st.error("Please upload a PDF first.")
@@ -178,7 +188,19 @@ def render_electrical_tariff_section() -> None:
                         "selected_voltage_level": selected_voltage_level,
                         "llm_extracted_tariff": extracted_tariff,
                         "llm_response_debug_text": llm_response_debug_text,
+                        "source_filename": uploaded_tariff_pdf.name,
+                        "loaded_from_session": False,
                     }
+                    source_filename = uploaded_tariff_pdf.name
+                    loaded_from_session = False
+                    session_id = str(st.session_state.get("project_session_id", "") or "")
+                    if session_id:
+                        save_tariff_snapshot(
+                            session_id=session_id,
+                            filename=uploaded_tariff_pdf.name,
+                            selected_voltage_level=selected_voltage_level,
+                            extracted_tariff=extracted_tariff if isinstance(extracted_tariff, dict) else {},
+                        )
                     st.success("Tariff values extracted.")
                 except Exception as exc:
                     llm_response_debug_text = str(exc)
@@ -192,4 +214,6 @@ def render_electrical_tariff_section() -> None:
             "selected_voltage_level": selected_voltage_level,
             "llm_extracted_tariff": extracted_tariff,
             "llm_response_debug_text": llm_response_debug_text,
+            "source_filename": source_filename,
+            "loaded_from_session": loaded_from_session,
         }

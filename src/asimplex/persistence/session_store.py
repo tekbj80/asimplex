@@ -58,6 +58,18 @@ def init_db() -> None:
             )
             """
         )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS tariff_snapshots (
+                session_id TEXT PRIMARY KEY,
+                filename TEXT,
+                selected_voltage_level TEXT,
+                extracted_tariff_json TEXT NOT NULL,
+                updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY(session_id) REFERENCES projects(session_id)
+            )
+            """
+        )
         existing_cols = {row[1] for row in conn.execute("PRAGMA table_info(profile_snapshots)").fetchall()}
         if "metadata_json" not in existing_cols:
             conn.execute("ALTER TABLE profile_snapshots ADD COLUMN metadata_json TEXT")
@@ -175,5 +187,54 @@ def get_profile_snapshot(session_id: str, profile_type: str) -> dict[str, Any] |
         "parse_attempts": json.loads(row[3]) if row[3] else [],
         "updated_at": str(row[4] or ""),
         "metadata": json.loads(row[5]) if row[5] else {},
+    }
+
+
+def save_tariff_snapshot(
+    *,
+    session_id: str,
+    filename: str | None,
+    selected_voltage_level: str | None,
+    extracted_tariff: dict[str, Any] | None,
+) -> None:
+    with _connect() as conn:
+        conn.execute(
+            """
+            INSERT INTO tariff_snapshots(session_id, filename, selected_voltage_level, extracted_tariff_json)
+            VALUES(?, ?, ?, ?)
+            ON CONFLICT(session_id) DO UPDATE SET
+                filename = excluded.filename,
+                selected_voltage_level = excluded.selected_voltage_level,
+                extracted_tariff_json = excluded.extracted_tariff_json,
+                updated_at = CURRENT_TIMESTAMP
+            """,
+            (
+                session_id,
+                filename or "",
+                selected_voltage_level or "",
+                json.dumps(extracted_tariff if isinstance(extracted_tariff, dict) else {}),
+            ),
+        )
+        conn.commit()
+
+
+def get_tariff_snapshot(session_id: str) -> dict[str, Any] | None:
+    with _connect() as conn:
+        row = conn.execute(
+            """
+            SELECT filename, selected_voltage_level, extracted_tariff_json, updated_at
+            FROM tariff_snapshots
+            WHERE session_id = ?
+            LIMIT 1
+            """,
+            (session_id,),
+        ).fetchone()
+    if row is None:
+        return None
+    return {
+        "filename": str(row[0] or ""),
+        "selected_voltage_level": str(row[1] or ""),
+        "extracted_tariff": json.loads(row[2]) if row[2] else {},
+        "updated_at": str(row[3] or ""),
     }
 

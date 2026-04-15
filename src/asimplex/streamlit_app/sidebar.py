@@ -9,15 +9,20 @@ from asimplex.persistence.session_store import (
     create_project,
     get_project_name,
     get_profile_snapshot,
+    get_tariff_snapshot,
     init_db,
     list_project_session_ids,
     normalize_project_name_to_session_id,
     project_exists,
 )
-from asimplex.streamlit_app.electrical_tariff_section import render_electrical_tariff_section
+from asimplex.streamlit_app.electrical_tariff_section import (
+    VOLTAGE_LEVEL_OPTIONS,
+    render_electrical_tariff_section,
+)
 from asimplex.streamlit_app.load_profile_section import apply_profile_to_power_profiles, render_load_profile_section
 from asimplex.streamlit_app.profile_columns import ProfileColumn
 from asimplex.streamlit_app.pv_profile_section import render_pv_profile_section
+from asimplex.streamlit_app.simulation_plan_section import update_simulation_plan_params
 from asimplex.tools.csv_tool import BASE_INDEX_15MIN
 
 
@@ -68,6 +73,24 @@ def _hydrate_profiles_for_session(session_id: str) -> None:
         if isinstance(series, list) and series:
             apply_profile_to_power_profiles(ProfileColumn.PV_PRODUCTION.column_name, series)
 
+    tariff_snapshot = get_tariff_snapshot(session_id)
+    if isinstance(tariff_snapshot, dict):
+        selected_voltage_level = tariff_snapshot.get("selected_voltage_level", "")
+        if selected_voltage_level not in VOLTAGE_LEVEL_OPTIONS:
+            selected_voltage_level = VOLTAGE_LEVEL_OPTIONS[0]
+        st.session_state["electrical_tariff"] = {
+            "selected_voltage_level": selected_voltage_level,
+            "llm_extracted_tariff": tariff_snapshot.get("extracted_tariff"),
+            "llm_response_debug_text": "",
+            "source_filename": tariff_snapshot.get("filename", ""),
+            "loaded_from_session": True,
+        }
+        extracted = tariff_snapshot.get("extracted_tariff")
+        if isinstance(extracted, dict):
+            from asimplex.streamlit_app.simulation_plan_section import apply_extracted_tariff_to_simulation_plan_params
+
+            apply_extracted_tariff_to_simulation_plan_params(extracted_tariff=extracted)
+    update_simulation_plan_params()
 
 def render_project_session_selector() -> None:
     """Render project/session selector under sidebar title."""
