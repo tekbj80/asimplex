@@ -7,6 +7,7 @@ import streamlit as st
 
 from asimplex.persistence.session_store import (
     create_project,
+    get_project_name,
     get_profile_snapshot,
     init_db,
     list_project_session_ids,
@@ -50,6 +51,20 @@ def _hydrate_profiles_for_session(session_id: str) -> None:
         st.session_state["pv_profile_description"] = pv_snapshot.get("description")
         st.session_state["pv_profile_filename"] = pv_snapshot.get("filename")
         st.session_state["pv_profile_parse_attempts"] = pv_snapshot.get("parse_attempts")
+        metadata = pv_snapshot.get("metadata", {})
+        if isinstance(metadata, dict) and str(metadata.get("source", "")) == "pvgis":
+            if "project_lat" in metadata:
+                st.session_state["project_lat"] = float(metadata["project_lat"])
+            if "project_lon" in metadata:
+                st.session_state["project_lon"] = float(metadata["project_lon"])
+            if "peak_power_kwp" in metadata:
+                st.session_state["pvgis_peak_kw"] = float(metadata["peak_power_kwp"])
+            if "tilt_deg" in metadata:
+                st.session_state["pvgis_tilt"] = float(metadata["tilt_deg"])
+            if "azimuth_deg" in metadata:
+                st.session_state["pvgis_azimuth"] = float(metadata["azimuth_deg"])
+            if "loss_percent" in metadata:
+                st.session_state["pvgis_loss"] = float(metadata["loss_percent"])
         if isinstance(series, list) and series:
             apply_profile_to_power_profiles(ProfileColumn.PV_PRODUCTION.column_name, series)
 
@@ -75,7 +90,7 @@ def render_project_session_selector() -> None:
             st.sidebar.warning("Please select an existing project ID.")
         else:
             st.session_state["project_session_id"] = selected_existing
-            st.session_state["project_name"] = selected_existing
+            st.session_state["project_name"] = get_project_name(selected_existing) or selected_existing
             st.session_state["session_ready"] = True
             _hydrate_profiles_for_session(selected_existing)
             st.sidebar.success(f"Loaded project: {selected_existing}")
@@ -106,9 +121,9 @@ def render_project_session_selector() -> None:
                 st.sidebar.success(f"Created project: {session_id}")
                 st.rerun()
 
-    active_id = str(st.session_state.get("project_session_id", "") or "")
-    if active_id:
-        st.sidebar.caption(f"Active session: `{active_id}`")
+    active_project_name = str(st.session_state.get("project_name", "") or "").strip()
+    if active_project_name:
+        st.sidebar.caption(f"Active project: `{active_project_name}`")
 
 
 def render_token_usage_table() -> None:

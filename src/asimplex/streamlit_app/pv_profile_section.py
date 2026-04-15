@@ -112,6 +112,7 @@ def render_pv_profile_section() -> None:
                             series=result.get("time_series_list"),
                             description=result.get("description"),
                             parse_attempts=result.get("parse_attempts"),
+                            metadata={"source": "csv_upload"},
                         )
                         if overwritten:
                             st.info("PV profile already existed for this project and has been overwritten.")
@@ -228,6 +229,15 @@ def render_pv_profile_section() -> None:
                         series=pv_series_15.tolist(),
                         description=st.session_state["pv_profile_description"],
                         parse_attempts=None,
+                        metadata={
+                            "source": "pvgis",
+                            "project_lat": float(st.session_state["project_lat"]),
+                            "project_lon": float(st.session_state["project_lon"]),
+                            "peak_power_kwp": float(peak_kw),
+                            "tilt_deg": float(tilt),
+                            "azimuth_deg": float(azimuth),
+                            "loss_percent": float(loss),
+                        },
                     )
                     if overwritten:
                         st.info("PV profile already existed for this project and has been overwritten.")
@@ -239,5 +249,8 @@ def render_pv_profile_section() -> None:
 
         description = st.session_state.get("pv_profile_description")
         parse_attempts = st.session_state.get("pv_profile_parse_attempts")
+        loaded_filename = st.session_state.get("pv_profile_filename")
+        if isinstance(loaded_filename, str) and loaded_filename.strip():
+            st.caption(f"Loaded file: `{loaded_filename}`")
         if description is not None:
             render_description_table(description, parse_attempts=parse_attempts)

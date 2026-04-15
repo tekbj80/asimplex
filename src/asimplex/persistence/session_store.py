@@ -51,12 +51,16 @@ def init_db() -> None:
                 series_json TEXT NOT NULL,
                 description_json TEXT,
                 parse_attempts_json TEXT,
+                metadata_json TEXT,
                 updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
                 PRIMARY KEY(session_id, profile_type),
                 FOREIGN KEY(session_id) REFERENCES projects(session_id)
             )
             """
         )
+        existing_cols = {row[1] for row in conn.execute("PRAGMA table_info(profile_snapshots)").fetchall()}
+        if "metadata_json" not in existing_cols:
+            conn.execute("ALTER TABLE profile_snapshots ADD COLUMN metadata_json TEXT")
         conn.commit()
 
 
@@ -86,6 +90,17 @@ def create_project(session_id: str, project_name: str) -> None:
         conn.commit()
 
 
+def get_project_name(session_id: str) -> str | None:
+    with _connect() as conn:
+        row = conn.execute(
+            "SELECT project_name FROM projects WHERE session_id = ? LIMIT 1",
+            (session_id,),
+        ).fetchone()
+    if row is None:
+        return None
+    return str(row[0]) if row[0] is not None else None
+
+
 def profile_snapshot_exists(session_id: str, profile_type: str) -> bool:
     with _connect() as conn:
         row = conn.execute(
@@ -103,6 +118,7 @@ def save_profile_snapshot(
     series: list[Any] | None,
     description: Any,
     parse_attempts: list[str] | None,
+    metadata: dict[str, Any] | None = None,
 ) -> bool:
     """Insert/update one profile snapshot per (session_id, profile_type).
 
@@ -113,14 +129,15 @@ def save_profile_snapshot(
         conn.execute(
             """
             INSERT INTO profile_snapshots(
-                session_id, profile_type, filename, series_json, description_json, parse_attempts_json
+                session_id, profile_type, filename, series_json, description_json, parse_attempts_json, metadata_json
             )
-            VALUES(?, ?, ?, ?, ?, ?)
+            VALUES(?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(session_id, profile_type) DO UPDATE SET
                 filename = excluded.filename,
                 series_json = excluded.series_json,
                 description_json = excluded.description_json,
                 parse_attempts_json = excluded.parse_attempts_json,
+                metadata_json = excluded.metadata_json,
                 updated_at = CURRENT_TIMESTAMP
             """,
             (
@@ -130,6 +147,7 @@ def save_profile_snapshot(
                 json.dumps(series if isinstance(series, list) else []),
                 json.dumps(description),
                 json.dumps(parse_attempts if isinstance(parse_attempts, list) else []),
+                json.dumps(metadata if isinstance(metadata, dict) else {}),
             ),
         )
         conn.commit()
@@ -141,6 +159,7 @@ def get_profile_snapshot(session_id: str, profile_type: str) -> dict[str, Any] |
         row = conn.execute(
             """
             SELECT filename, series_json, description_json, parse_attempts_json, updated_at
+            , metadata_json
             FROM profile_snapshots
             WHERE session_id = ? AND profile_type = ?
             LIMIT 1
@@ -155,5 +174,6 @@ def get_profile_snapshot(session_id: str, profile_type: str) -> dict[str, Any] |
         "description": json.loads(row[2]) if row[2] else None,
         "parse_attempts": json.loads(row[3]) if row[3] else [],
         "updated_at": str(row[4] or ""),
+        "metadata": json.loads(row[5]) if row[5] else {},
     }
 

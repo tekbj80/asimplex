@@ -140,6 +140,7 @@ def render_load_profile_section() -> None:
                             series=result.get("time_series_list"),
                             description=result.get("description"),
                             parse_attempts=result.get("parse_attempts"),
+                            metadata={"source": "csv_upload"},
                         )
                         if overwritten:
                             st.info("Load profile already existed for this project and has been overwritten.")
@@ -153,5 +154,8 @@ def render_load_profile_section() -> None:
 
         description = st.session_state.get("load_profile_description")
         parse_attempts = st.session_state.get("load_profile_parse_attempts")
+        loaded_filename = st.session_state.get("load_profile_filename")
+        if isinstance(loaded_filename, str) and loaded_filename.strip():
+            st.caption(f"Loaded file: `{loaded_filename}`")
         if description is not None:
             render_description_table(description, parse_attempts=parse_attempts)
