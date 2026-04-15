@@ -7,6 +7,7 @@ from io import BytesIO
 import pandas as pd
 import streamlit as st
 
+from asimplex.persistence.session_store import save_profile_snapshot
 from asimplex.streamlit_app.profile_columns import ProfileColumn
 from asimplex.tools.calculations import calculate_full_hour_equivalent
 from asimplex.tools.formatting import format_metric_name, format_metric_value
@@ -130,6 +131,20 @@ def render_load_profile_section() -> None:
                     apply_profile_to_power_profiles(
                         ProfileColumn.SITE_LOAD.column_name, result.get("time_series_list", [])
                     )
+                    session_id = str(st.session_state.get("project_session_id", "") or "")
+                    if session_id:
+                        overwritten = save_profile_snapshot(
+                            session_id=session_id,
+                            profile_type="load",
+                            filename=uploaded_file.name,
+                            series=result.get("time_series_list"),
+                            description=result.get("description"),
+                            parse_attempts=result.get("parse_attempts"),
+                        )
+                        if overwritten:
+                            st.info("Load profile already existed for this project and has been overwritten.")
+                        else:
+                            st.success("Load profile saved to project storage.")
             except Exception as exc:  # pragma: no cover - UI defensive branch
                 st.session_state["load_profile_series"] = [0]
                 st.session_state["load_profile_description"] = f"Failed to parse file: {exc}"

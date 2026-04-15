@@ -11,6 +11,10 @@ from asimplex.tools.csv_tool import BASE_INDEX_15MIN
 
 
 def init_session_state() -> None:
+    st.session_state.setdefault("project_name", "")
+    st.session_state.setdefault("project_session_id", "")
+    st.session_state.setdefault("session_ready", False)
+    st.session_state.setdefault("show_new_project_input", False)
     st.session_state.setdefault("load_profile_series", None)
     st.session_state.setdefault("load_profile_description", None)
     st.session_state.setdefault("load_profile_filename", None)

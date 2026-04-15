@@ -133,7 +133,6 @@ def main() -> None:
     init_session_state()
     st.sidebar.title("asimplex")
     st.sidebar.caption("Navigation")
-    st.sidebar.divider()
     render_sidebar()
     render_power_profiles_plot()
     render_peak_shaving_table()

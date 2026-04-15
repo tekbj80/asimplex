@@ -11,6 +11,7 @@ import streamlit as st
 from streamlit_folium import st_folium
 
 from asimplex.constants import HOUR_FRAC
+from asimplex.persistence.session_store import save_profile_snapshot
 from asimplex.streamlit_app.load_profile_section import (
     apply_profile_to_power_profiles,
     refresh_power_profiles_metrics,
@@ -102,6 +103,20 @@ def render_pv_profile_section() -> None:
                     apply_profile_to_power_profiles(
                         ProfileColumn.PV_PRODUCTION.column_name, result.get("time_series_list", [])
                     )
+                    session_id = str(st.session_state.get("project_session_id", "") or "")
+                    if session_id:
+                        overwritten = save_profile_snapshot(
+                            session_id=session_id,
+                            profile_type="pv",
+                            filename=uploaded_file.name,
+                            series=result.get("time_series_list"),
+                            description=result.get("description"),
+                            parse_attempts=result.get("parse_attempts"),
+                        )
+                        if overwritten:
+                            st.info("PV profile already existed for this project and has been overwritten.")
+                        else:
+                            st.success("PV profile saved to project storage.")
             except Exception as exc:  # pragma: no cover - UI defensive branch
                 st.session_state["pv_profile_series"] = [0]
                 st.session_state["pv_profile_description"] = f"Failed to parse PV file: {exc}"
@@ -204,6 +219,20 @@ def render_pv_profile_section() -> None:
                 st.session_state["pv_profile_description"] = _build_description_from_series(pv_series_15)
                 st.session_state["pv_profile_filename"] = "PVGIS seriescalc"
                 st.session_state["pv_profile_parse_attempts"] = None
+                session_id = str(st.session_state.get("project_session_id", "") or "")
+                if session_id:
+                    overwritten = save_profile_snapshot(
+                        session_id=session_id,
+                        profile_type="pv",
+                        filename="PVGIS seriescalc",
+                        series=pv_series_15.tolist(),
+                        description=st.session_state["pv_profile_description"],
+                        parse_attempts=None,
+                    )
+                    if overwritten:
+                        st.info("PV profile already existed for this project and has been overwritten.")
+                    else:
+                        st.success("PV profile saved to project storage.")
                 st.success(f"Fetched and stored {len(pv_series_15)} PV rows.")
             except Exception as exc:
                 st.error(f"Request failed: {exc}")
