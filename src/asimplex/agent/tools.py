@@ -51,6 +51,43 @@ def get_llm_simulation_context_payload(session_state: dict[str, Any]) -> dict[st
     }
 
 
+def get_proposal_json_format() -> dict[str, Any]:
+    """Return canonical proposal JSON contract for agent parameter updates."""
+    return {
+        "allowed_top_level_keys": ["application", "battery_selection"],
+        "allowed_application_keys": ["grid_limit", "evo_threshold"],
+        "constraints": {
+            "application": {
+                "grid_limit": {"type": "number", "exclusive_minimum": 0},
+                "evo_threshold": {"type": "number", "minimum": 0.0, "maximum": 1.0},
+            },
+            "battery_selection": {
+                "product_id": {"type": "integer"},
+            },
+        },
+        "path_constraints": {
+            "application.grid_limit": {"type": "number", "exclusive_minimum": 0},
+            "application.evo_threshold": {"type": "number", "minimum": 0.0, "maximum": 1.0},
+            "battery_selection.product_id": {"type": "integer"},
+        },
+        "canonical_examples": {
+            "application_only": {"application": {"grid_limit": 220.87, "evo_threshold": 0.95}},
+            "battery_only": {"battery_selection": {"product_id": 123456}},
+            "application_and_battery": {
+                "application": {"grid_limit": 180.0, "evo_threshold": 0.4},
+                "battery_selection": {"product_id": 123456},
+            },
+        },
+        "anti_patterns": {
+            "dotted_keys_not_allowed": [
+                "application.grid_limit",
+                "application.evo_threshold",
+                "battery_selection.product_id",
+            ]
+        },
+    }
+
+
 def _normalize_product_id(selection: dict[str, Any]) -> int | None:
     raw = selection.get("product_id", selection.get("productId"))
     if raw is None:
@@ -96,10 +133,42 @@ def validate_scope(proposed_params: dict[str, Any]) -> list[str]:
     return issues
 
 
+def _normalize_proposed_params_shape(proposed_params: dict[str, Any]) -> dict[str, Any]:
+    """Normalize flattened dotted keys into nested proposal objects.
+
+    Example:
+    {"application.grid_limit": 120} -> {"application": {"grid_limit": 120}}
+    """
+    normalized: dict[str, Any] = dict(proposed_params)
+
+    application = normalized.get("application")
+    if not isinstance(application, dict):
+        application = {}
+    for dotted_key in ("application.grid_limit", "application.evo_threshold"):
+        if dotted_key in normalized:
+            leaf_key = dotted_key.split(".", 1)[1]
+            application[leaf_key] = normalized.pop(dotted_key)
+    if application:
+        normalized["application"] = application
+
+    battery_selection = normalized.get("battery_selection")
+    if not isinstance(battery_selection, dict):
+        battery_selection = {}
+    for dotted_key in ("battery_selection.product_id", "battery_selection.productId"):
+        if dotted_key in normalized:
+            leaf_key = dotted_key.split(".", 1)[1]
+            battery_selection[leaf_key] = normalized.pop(dotted_key)
+    if battery_selection:
+        normalized["battery_selection"] = battery_selection
+
+    return normalized
+
+
 def propose_parameter_patch(
     current_params: dict[str, Any],
     proposed_params: dict[str, Any],
 ) -> dict[str, Any]:
+    proposed_params = _normalize_proposed_params_shape(proposed_params)
     issues = validate_scope(proposed_params)
     if issues:
         return {"patch": {}, "selected_battery": None, "issues": issues}

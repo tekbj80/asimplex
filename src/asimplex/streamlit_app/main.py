@@ -16,7 +16,6 @@ from asimplex.streamlit_app.sidebar import render_sidebar
 from asimplex.streamlit_app.simulation_plan_section import (
     render_simulation_plan_section,
     run_simulation_plan_with_params,
-    update_simulation_plan_params,
 )
 
 
@@ -106,6 +105,10 @@ def render_chat_shell() -> None:
 
             if issues:
                 st.error("Proposal contains disallowed or invalid updates.")
+                st.caption(
+                    "Expected nested payload under `application` and/or "
+                    "`battery_selection`; dotted keys are invalid."
+                )
                 st.code(json.dumps({"issues": issues}, indent=2), language="json")
             else:
                 st.markdown("Patch to apply:")
@@ -115,7 +118,6 @@ def render_chat_shell() -> None:
             if c1.button("Confirm apply + run", key="agent_confirm_apply_run", type="primary", disabled=bool(issues)):
                 updated_params = apply_parameter_patch(current_params, patch)
                 st.session_state["simulation_plan_params"] = updated_params
-                update_simulation_plan_params()
                 with st.spinner("Applying changes and running simulation..."):
                     ok, msg = run_simulation_plan_with_params(updated_params)
                 history.append({"role": "assistant", "content": msg})

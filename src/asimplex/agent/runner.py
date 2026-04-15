@@ -12,7 +12,12 @@ from langchain.agents.structured_output import ToolStrategy
 from langchain.chat_models import init_chat_model
 from langchain.tools import tool
 
-from asimplex.agent.tools import get_llm_simulation_context_payload, propose_parameter_patch, search_price_list
+from asimplex.agent.tools import (
+    get_llm_simulation_context_payload,
+    get_proposal_json_format as get_proposal_json_format_contract,
+    propose_parameter_patch,
+    search_price_list,
+)
 from asimplex.llm_usage import sum_usage_from_langchain_messages
 
 SYSTEM_PROMPT = """
@@ -33,8 +38,11 @@ Always include concise reasoning and mention EVO logic:
 - evo_threshold is SOC p.u. above which EVO is activated.
 - lsk_charge_from_grid influences charging toward evo_threshold.
 
-Before asking for confirmation, you MUST call tool `draft_parameter_patch`
-with your candidate params so validation and battery lookup are checked.
+Before drafting proposed_params, you MUST call tool `get_proposal_json_format`.
+Use that returned contract as the source of truth for shape and constraints.
+Then call tool `draft_parameter_patch` with your candidate params so validation
+and battery lookup are checked.
+If draft_parameter_patch returns issues, revise proposed_params and retry.
 Only set next_step="confirm" when issues is empty and patch is non-empty.
 """.strip()
 
@@ -81,6 +89,11 @@ def run_tuning_agent(*, user_message: str, session_state: dict[str, Any]) -> dic
         return json.dumps(search_price_list(query, limit=12), indent=2)
 
     @tool
+    def get_proposal_json_format() -> str:
+        """Return canonical nested JSON contract for proposed_params."""
+        return json.dumps(get_proposal_json_format_contract(), indent=2)
+
+    @tool
     def draft_parameter_patch(proposed_params_json: str) -> str:
         """Validate a proposed parameter object and return patch, selected_battery, and issues."""
         proposed_obj = _extract_json_object(proposed_params_json)
@@ -91,7 +104,7 @@ def run_tuning_agent(*, user_message: str, session_state: dict[str, Any]) -> dic
 
     model_name = os.getenv("ASIMPLEX_AGENT_MODEL", "gpt-4.1-mini")
     llm = init_chat_model(model_name, temperature=0)
-    tools = [get_context_payloads, lookup_price_list, draft_parameter_patch]
+    tools = [get_context_payloads, lookup_price_list, get_proposal_json_format, draft_parameter_patch]
     agent = create_agent(
         model=llm,
         system_prompt=SYSTEM_PROMPT,
