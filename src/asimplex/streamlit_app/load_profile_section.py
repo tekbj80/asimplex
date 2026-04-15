@@ -7,6 +7,7 @@ from io import BytesIO
 import pandas as pd
 import streamlit as st
 
+from asimplex.llm_usage import default_llm_usage
 from asimplex.streamlit_app.profile_columns import ProfileColumn
 from asimplex.streamlit_app.simulation_plan_section import default_simulation_plan_params
 from asimplex.tools.calculations import calculate_full_hour_equivalent
@@ -38,6 +39,7 @@ def init_session_state() -> None:
             "llm_response_debug_text": "",
         },
     )
+    st.session_state.setdefault("llm_usage", default_llm_usage())
     st.session_state.setdefault("simulation_plan_params", default_simulation_plan_params())
     if "power_profiles" not in st.session_state:
         st.session_state["power_profiles"] = pd.DataFrame(index=BASE_INDEX_15MIN.copy())

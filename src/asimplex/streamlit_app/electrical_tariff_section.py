@@ -7,6 +7,8 @@ import os
 
 import streamlit as st
 from openai import OpenAI
+
+from asimplex.llm_usage import record_llm_usage
 from asimplex.streamlit_app.simulation_plan_section import (
     apply_extracted_tariff_to_simulation_plan_params,
 )
@@ -63,7 +65,9 @@ TARIFF_EXTRACTION_PROMPT_TEMPLATE = (
 )
 
 
-def _extract_tariff_with_llm(pdf_bytes: bytes, filename: str, voltage_level: str) -> tuple[dict[str, object], str]:
+def _extract_tariff_with_llm(
+    pdf_bytes: bytes, filename: str, voltage_level: str
+) -> tuple[dict[str, object], str, dict[str, int] | None]:
     api_key = os.getenv("OPENAI_API_KEY")
     if not api_key:
         raise RuntimeError("OPENAI_API_KEY is not set.")
@@ -116,7 +120,14 @@ def _extract_tariff_with_llm(pdf_bytes: bytes, filename: str, voltage_level: str
         "base_charge_eur_annual": float(parsed["base_charge_eur_annual"]),
         "taxes_duties_percent_of_total": float(parsed["taxes_duties_percent_of_total"]),
     }
-    return extracted, raw_response_dump
+    usage_info: dict[str, int] | None = None
+    usage_obj = getattr(llm_response, "usage", None)
+    if usage_obj is not None:
+        usage_info = {
+            "input_tokens": int(getattr(usage_obj, "input_tokens", 0) or 0),
+            "output_tokens": int(getattr(usage_obj, "output_tokens", 0) or 0),
+        }
+    return extracted, raw_response_dump, usage_info
 
 
 def render_electrical_tariff_section() -> None:
@@ -154,10 +165,18 @@ def render_electrical_tariff_section() -> None:
             else:
                 try:
                     with st.spinner("Uploading PDF and extracting tariff values..."):
-                        extracted_tariff, llm_response_debug_text = _extract_tariff_with_llm(
+                        extracted_tariff, llm_response_debug_text, usage = _extract_tariff_with_llm(
                             pdf_bytes=uploaded_tariff_pdf.getvalue(),
                             filename=uploaded_tariff_pdf.name,
                             voltage_level=selected_voltage_level,
+                        )
+                    if isinstance(usage, dict):
+                        record_llm_usage(
+                            st.session_state,
+                            label="Tariff extraction",
+                            model_name="gpt-4.1-mini",
+                            input_tokens=usage.get("input_tokens"),
+                            output_tokens=usage.get("output_tokens"),
                         )
                     apply_extracted_tariff_to_simulation_plan_params(
                         extracted_tariff=extracted_tariff,

@@ -13,6 +13,7 @@ from langchain.chat_models import init_chat_model
 from langchain.tools import tool
 
 from asimplex.agent.tools import get_llm_context_payloads, search_price_list
+from asimplex.llm_usage import sum_usage_from_langchain_messages
 
 SYSTEM_PROMPT = """
 You are an optimization copilot for a peak-shaving simulation.
@@ -81,6 +82,7 @@ def run_tuning_agent(*, user_message: str, session_state: dict[str, Any]) -> dic
         response_format=ToolStrategy(AgentResponse),
     )
     result = agent.invoke({"messages": [{"role": "user", "content": user_message}]})
+    usage_in, usage_out = sum_usage_from_langchain_messages(result.get("messages"))
 
     structured = result.get("structured_response")
     if isinstance(structured, AgentResponse):
@@ -113,5 +115,6 @@ def run_tuning_agent(*, user_message: str, session_state: dict[str, Any]) -> dic
     parsed.setdefault("reasoning", "")
     parsed.setdefault("proposed_params", {})
     parsed.setdefault("next_step", "insufficient_data")
+    parsed["usage"] = {"input_tokens": usage_in, "output_tokens": usage_out}
     return parsed
 

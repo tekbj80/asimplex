@@ -3,14 +3,16 @@
 from __future__ import annotations
 
 import json
+import os
 
 import streamlit as st
 
 from asimplex.agent.tools import apply_parameter_patch, propose_parameter_patch
+from asimplex.llm_usage import record_llm_usage
 from asimplex.streamlit_app.load_profile_section import init_session_state
 from asimplex.streamlit_app.peak_shaving_table import render_peak_shaving_table
 from asimplex.streamlit_app.power_profiles_plot import render_power_profiles_plot
-from asimplex.streamlit_app.sidebar import render_sidebar
+from asimplex.streamlit_app.sidebar import render_sidebar, render_token_usage_into
 from asimplex.streamlit_app.simulation_plan_section import (
     render_simulation_plan_section,
     run_simulation_plan_with_params,
@@ -38,6 +40,15 @@ def render_chat_shell() -> None:
                     from asimplex.agent.runner import run_tuning_agent
 
                     agent_result = run_tuning_agent(user_message=user_message, session_state=st.session_state)
+                    usage = agent_result.get("usage")
+                    if isinstance(usage, dict):
+                        record_llm_usage(
+                            st.session_state,
+                            label="Chat agent",
+                            model_name=os.getenv("ASIMPLEX_AGENT_MODEL", "gpt-4.1-mini"),
+                            input_tokens=usage.get("input_tokens"),
+                            output_tokens=usage.get("output_tokens"),
+                        )
                     reasoning = str(agent_result.get("reasoning", "")).strip()
                     proposed_params = agent_result.get("proposed_params", {})
                     next_step = str(agent_result.get("next_step", "insufficient_data"))
@@ -110,11 +121,16 @@ def render_chat_shell() -> None:
 def main() -> None:
     st.set_page_config(page_title="asimplex", page_icon=":speech_balloon:", layout="wide")
     init_session_state()
+    st.sidebar.title("asimplex")
+    st.sidebar.caption("Navigation")
+    token_usage_slot = st.sidebar.empty()
+    st.sidebar.divider()
     render_sidebar()
     render_power_profiles_plot()
     render_peak_shaving_table()
     render_simulation_plan_section()
     render_chat_shell()
+    render_token_usage_into(token_usage_slot)
 
 
 if __name__ == "__main__":
