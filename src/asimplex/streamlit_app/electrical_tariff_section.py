@@ -9,7 +9,7 @@ import streamlit as st
 from openai import OpenAI
 
 from asimplex.llm_usage import record_llm_usage
-from asimplex.persistence.session_store import save_tariff_snapshot
+from asimplex.persistence.session_store import create_version, save_tariff_snapshot
 from asimplex.streamlit_app.simulation_plan_section import (
     apply_extracted_tariff_to_simulation_plan_params,
 )
@@ -193,13 +193,20 @@ def render_electrical_tariff_section() -> None:
                     }
                     source_filename = uploaded_tariff_pdf.name
                     loaded_from_session = False
-                    session_id = str(st.session_state.get("project_session_id", "") or "")
-                    if session_id:
+                    project_name = str(st.session_state.get("project_name", "") or "")
+                    if project_name:
                         save_tariff_snapshot(
-                            session_id=session_id,
+                            project_name=project_name,
                             filename=uploaded_tariff_pdf.name,
                             selected_voltage_level=selected_voltage_level,
                             extracted_tariff=extracted_tariff if isinstance(extracted_tariff, dict) else {},
+                        )
+                        create_version(
+                            project_name=project_name,
+                            source="tariff_upload",
+                            note=f"Tariff extracted from {uploaded_tariff_pdf.name} ({selected_voltage_level})",
+                            params=st.session_state.get("simulation_plan_params", {}),
+                            patch={"extracted_tariff": extracted_tariff} if isinstance(extracted_tariff, dict) else {},
                         )
                     st.success("Tariff values extracted.")
                 except Exception as exc:

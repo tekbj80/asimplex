@@ -108,10 +108,10 @@ def render_pv_profile_section() -> None:
                     apply_profile_to_power_profiles(
                         ProfileColumn.PV_PRODUCTION.column_name, result.get("time_series_list", [])
                     )
-                    session_id = str(st.session_state.get("project_session_id", "") or "")
-                    if session_id:
+                    project_name = str(st.session_state.get("project_name", "") or "")
+                    if project_name:
                         overwritten = save_profile_snapshot(
-                            session_id=session_id,
+                            project_name=project_name,
                             profile_type="pv",
                             filename=uploaded_file.name,
                             series=result.get("time_series_list"),
@@ -120,7 +120,7 @@ def render_pv_profile_section() -> None:
                             metadata={"source": "csv_upload"},
                             reason_text=update_reason,
                         )
-                        snapshot = get_profile_snapshot(session_id, "pv")
+                        snapshot = get_profile_snapshot(project_name, "pv")
                         if isinstance(snapshot, dict):
                             st.session_state["pv_profile_reason_text"] = snapshot.get("reason_text", "")
                             st.session_state["pv_profile_created_at"] = snapshot.get("created_at", "")
@@ -231,10 +231,10 @@ def render_pv_profile_section() -> None:
                 st.session_state["pv_profile_description"] = _build_description_from_series(pv_series_15)
                 st.session_state["pv_profile_filename"] = "PVGIS seriescalc"
                 st.session_state["pv_profile_parse_attempts"] = None
-                session_id = str(st.session_state.get("project_session_id", "") or "")
-                if session_id:
+                project_name = str(st.session_state.get("project_name", "") or "")
+                if project_name:
                     overwritten = save_profile_snapshot(
-                        session_id=session_id,
+                        project_name=project_name,
                         profile_type="pv",
                         filename="PVGIS seriescalc",
                         series=pv_series_15.tolist(),
@@ -251,7 +251,7 @@ def render_pv_profile_section() -> None:
                         },
                         reason_text=update_reason,
                     )
-                    snapshot = get_profile_snapshot(session_id, "pv")
+                    snapshot = get_profile_snapshot(project_name, "pv")
                     if isinstance(snapshot, dict):
                         st.session_state["pv_profile_reason_text"] = snapshot.get("reason_text", "")
                         st.session_state["pv_profile_created_at"] = snapshot.get("created_at", "")

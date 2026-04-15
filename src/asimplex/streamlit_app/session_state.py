@@ -12,7 +12,6 @@ from asimplex.tools.csv_tool import BASE_INDEX_15MIN
 
 def init_session_state() -> None:
     st.session_state.setdefault("project_name", "")
-    st.session_state.setdefault("project_session_id", "")
     st.session_state.setdefault("session_ready", False)
     st.session_state.setdefault("show_new_project_input", False)
     st.session_state.setdefault("load_profile_series", None)
@@ -48,6 +47,9 @@ def init_session_state() -> None:
     )
     st.session_state.setdefault("llm_usage", default_llm_usage())
     st.session_state.setdefault("simulation_plan_params", default_simulation_plan_params())
+    st.session_state.setdefault("sim_version_note", "")
+    st.session_state.setdefault("sim_version_selected", None)
+    st.session_state.setdefault("sim_versions_cache", [])
     if "power_profiles" not in st.session_state:
         st.session_state["power_profiles"] = pd.DataFrame(index=BASE_INDEX_15MIN.copy())
 

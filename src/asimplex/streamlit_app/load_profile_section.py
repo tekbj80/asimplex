@@ -136,10 +136,10 @@ def render_load_profile_section() -> None:
                     apply_profile_to_power_profiles(
                         ProfileColumn.SITE_LOAD.column_name, result.get("time_series_list", [])
                     )
-                    session_id = str(st.session_state.get("project_session_id", "") or "")
-                    if session_id:
+                    project_name = str(st.session_state.get("project_name", "") or "")
+                    if project_name:
                         overwritten = save_profile_snapshot(
-                            session_id=session_id,
+                            project_name=project_name,
                             profile_type="load",
                             filename=uploaded_file.name,
                             series=result.get("time_series_list"),
@@ -148,7 +148,7 @@ def render_load_profile_section() -> None:
                             metadata={"source": "csv_upload"},
                             reason_text=update_reason,
                         )
-                        snapshot = get_profile_snapshot(session_id, "load")
+                        snapshot = get_profile_snapshot(project_name, "load")
                         if isinstance(snapshot, dict):
                             st.session_state["load_profile_reason_text"] = snapshot.get("reason_text", "")
                             st.session_state["load_profile_created_at"] = snapshot.get("created_at", "")

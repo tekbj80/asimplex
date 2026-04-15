@@ -7,12 +7,11 @@ import streamlit as st
 
 from asimplex.persistence.session_store import (
     create_project,
-    get_project_name,
+    get_latest_params,
     get_profile_snapshot,
     get_tariff_snapshot,
     init_db,
-    list_project_session_ids,
-    normalize_project_name_to_session_id,
+    list_project_names,
     project_exists,
 )
 from asimplex.streamlit_app.electrical_tariff_section import (
@@ -26,11 +25,11 @@ from asimplex.streamlit_app.simulation_plan_section import update_simulation_pla
 from asimplex.tools.csv_tool import BASE_INDEX_15MIN
 
 
-def _hydrate_profiles_for_session(session_id: str) -> None:
+def _hydrate_profiles_for_project(project_name: str) -> None:
     st.session_state["power_profiles"] = pd.DataFrame(index=BASE_INDEX_15MIN.copy())
 
-    load_snapshot = get_profile_snapshot(session_id, "load")
-    pv_snapshot = get_profile_snapshot(session_id, "pv")
+    load_snapshot = get_profile_snapshot(project_name, "load")
+    pv_snapshot = get_profile_snapshot(project_name, "pv")
 
     st.session_state["load_profile_series"] = None
     st.session_state["load_profile_description"] = None
@@ -85,7 +84,7 @@ def _hydrate_profiles_for_session(session_id: str) -> None:
         if isinstance(series, list) and series:
             apply_profile_to_power_profiles(ProfileColumn.PV_PRODUCTION.column_name, series)
 
-    tariff_snapshot = get_tariff_snapshot(session_id)
+    tariff_snapshot = get_tariff_snapshot(project_name)
     if isinstance(tariff_snapshot, dict):
         selected_voltage_level = tariff_snapshot.get("selected_voltage_level", "")
         if selected_voltage_level not in VOLTAGE_LEVEL_OPTIONS:
@@ -102,32 +101,36 @@ def _hydrate_profiles_for_session(session_id: str) -> None:
             from asimplex.streamlit_app.simulation_plan_section import apply_extracted_tariff_to_simulation_plan_params
 
             apply_extracted_tariff_to_simulation_plan_params(extracted_tariff=extracted)
+    latest_simulation = get_latest_params(project_name)
+    if isinstance(latest_simulation, dict):
+        latest_params = latest_simulation.get("params")
+        if isinstance(latest_params, dict) and latest_params:
+            st.session_state["simulation_plan_params"] = latest_params
     update_simulation_plan_params()
 
 def render_project_session_selector() -> None:
-    """Render project/session selector under sidebar title."""
+    """Render project selector under sidebar title."""
     init_db()
-    session_ids = list_project_session_ids()
-    options = [""] + session_ids
-    default_session_id = str(st.session_state.get("project_session_id", "") or "")
-    select_index = options.index(default_session_id) if default_session_id in options else 0
+    project_names = list_project_names()
+    options = [""] + project_names
+    default_project_name = str(st.session_state.get("project_name", "") or "")
+    select_index = options.index(default_project_name) if default_project_name in options else 0
 
     selected_existing = st.sidebar.selectbox(
-        "Project sessions",
+        "Projects",
         options=options,
         index=select_index,
         format_func=lambda x: "Select existing project..." if x == "" else x,
-        key="project_session_selectbox",
+        key="project_selectbox",
     )
     c1, c2 = st.sidebar.columns(2)
     if c1.button("Load project", key="load_project_session_btn", width="stretch"):
         if not selected_existing:
-            st.sidebar.warning("Please select an existing project ID.")
+            st.sidebar.warning("Please select an existing project.")
         else:
-            st.session_state["project_session_id"] = selected_existing
-            st.session_state["project_name"] = get_project_name(selected_existing) or selected_existing
+            st.session_state["project_name"] = selected_existing
             st.session_state["session_ready"] = True
-            _hydrate_profiles_for_session(selected_existing)
+            _hydrate_profiles_for_project(selected_existing)
             st.sidebar.success(f"Loaded project: {selected_existing}")
             st.rerun()
 
@@ -142,18 +145,17 @@ def render_project_session_selector() -> None:
             placeholder="e.g. Berlin_Pilot_A",
         )
         if st.sidebar.button("Create project", key="create_project_btn", type="primary", width="stretch"):
-            session_id = normalize_project_name_to_session_id(project_name)
-            if not session_id:
-                st.sidebar.error("Project name is empty after normalization. Use letters/numbers.")
-            elif project_exists(session_id):
-                st.sidebar.error(f"Project ID already exists: {session_id}")
+            normalized_name = str(project_name or "").strip()
+            if not normalized_name:
+                st.sidebar.error("Project name cannot be empty.")
+            elif project_exists(normalized_name):
+                st.sidebar.error(f"Project already exists: {normalized_name}")
             else:
-                create_project(session_id, project_name)
-                st.session_state["project_name"] = project_name.strip()
-                st.session_state["project_session_id"] = session_id
+                create_project(normalized_name)
+                st.session_state["project_name"] = normalized_name
                 st.session_state["session_ready"] = True
                 st.session_state["show_new_project_input"] = False
-                st.sidebar.success(f"Created project: {session_id}")
+                st.sidebar.success(f"Created project: {normalized_name}")
                 st.rerun()
 
     active_project_name = str(st.session_state.get("project_name", "") or "").strip()

@@ -11,6 +11,7 @@ import streamlit.components.v1 as components
 from simuplex import DEFAULT_BATTERY_PARAMS, DEFAULT_CLOCK_PARAMS, DEFAULT_COMMERCIAL_PARAMS, DEFAULT_GRID_PARAMS
 from simuplex.applications.peak_shaving import DEFAULT_APPLICATION_PARAMS
 
+from asimplex.persistence.session_store import create_version, get_version_by_no, list_versions
 from asimplex.streamlit_app.profile_columns import ProfileColumn
 from asimplex.tools.simuplex_simulation import build_peak_shaving_simulator, build_simulation_plot_html
 
@@ -507,3 +508,66 @@ def render_simulation_plan_section() -> None:
             with st.expander("Simulation Interactive Plot", expanded=True):
                 st.markdown("**Simulation Interactive Plot**")
                 components.html(simulation_plot_html, height=850, scrolling=True)
+
+        st.markdown("---")
+        st.markdown("**Simulation Parameter Versions**")
+        project_name = str(st.session_state.get("project_name", "") or "")
+        version_note = st.text_input(
+            "Version note",
+            value=str(st.session_state.get("sim_version_note", "") or ""),
+            key="sim_version_note",
+            placeholder="e.g. Manually adjusted grid limit after review",
+        )
+        versions = list_versions(project_name, limit=100) if project_name else []
+        st.session_state["sim_versions_cache"] = versions
+
+        selected_version_no = None
+        if versions:
+            selected_version_no = st.selectbox(
+                "Saved versions",
+                options=[int(v.get("version_no", -1)) for v in versions],
+                format_func=lambda vn: next(
+                    (
+                        f"v{item['version_no']} - {item['created_at']} - {item['source']}"
+                        + (f" ({item['note']})" if item.get("note") else "")
+                        for item in versions
+                        if int(item.get("version_no", -1)) == int(vn)
+                    ),
+                    f"v{vn}",
+                ),
+                index=0,
+                key="sim_version_selected",
+            )
+        else:
+            st.caption("No saved versions yet.")
+
+        c_save, c_load = st.columns(2)
+        if c_save.button("Save version", key="sim_version_save_btn", type="secondary", width="stretch"):
+            if not project_name:
+                st.warning("Load or create a project first to save versions.")
+            else:
+                version_no = create_version(
+                    project_name=project_name,
+                    source="manual_save",
+                    note=version_note,
+                    params=st.session_state.get("simulation_plan_params", {}),
+                    patch={},
+                )
+                st.success(f"Saved version v{version_no}.")
+                st.rerun()
+
+        if c_load.button("Load selected version", key="sim_version_load_btn", width="stretch"):
+            if not project_name:
+                st.warning("Load or create a project first.")
+            elif selected_version_no is None:
+                st.warning("No saved version selected.")
+            else:
+                selected_payload = get_version_by_no(project_name, int(selected_version_no))
+                if isinstance(selected_payload, dict):
+                    selected_params = selected_payload.get("params", {})
+                    if isinstance(selected_params, dict):
+                        st.session_state["simulation_plan_params"] = selected_params
+                        st.success(f"Loaded version v{selected_version_no}.")
+                        st.rerun()
+                else:
+                    st.error("Could not load selected version.")

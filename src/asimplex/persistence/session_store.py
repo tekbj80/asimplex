@@ -1,9 +1,8 @@
-"""SQLite-backed project/session registry for Streamlit sessions."""
+"""SQLite-backed project/version registry keyed by project name."""
 
 from __future__ import annotations
 
 import json
-import re
 import sqlite3
 from pathlib import Path
 from typing import Any
@@ -78,59 +77,199 @@ def init_db() -> None:
         if "reason_text" not in existing_cols:
             conn.execute("ALTER TABLE profile_snapshots ADD COLUMN reason_text TEXT")
         if "created_at" not in existing_cols:
-            conn.execute("ALTER TABLE profile_snapshots ADD COLUMN created_at TEXT DEFAULT CURRENT_TIMESTAMP")
+            # SQLite ALTER TABLE does not allow non-constant defaults on some versions.
+            conn.execute("ALTER TABLE profile_snapshots ADD COLUMN created_at TEXT")
+            conn.execute(
+                "UPDATE profile_snapshots SET created_at = CURRENT_TIMESTAMP "
+                "WHERE created_at IS NULL OR created_at = ''"
+            )
         conn.commit()
 
 
-def normalize_project_name_to_session_id(project_name: str) -> str:
-    normalized = re.sub(r"[^a-z0-9]+", "-", project_name.strip().lower())
-    return normalized.strip("-")
+def normalize_project_name(project_name: str) -> str:
+    return str(project_name or "").strip()
 
 
-def list_project_session_ids() -> list[str]:
+def list_project_names() -> list[str]:
     with _connect() as conn:
-        rows = conn.execute("SELECT session_id FROM projects ORDER BY session_id").fetchall()
+        rows = conn.execute("SELECT project_name FROM projects ORDER BY project_name").fetchall()
     return [str(row[0]) for row in rows]
 
 
-def project_exists(session_id: str) -> bool:
+def project_exists(project_name: str) -> bool:
+    normalized_name = normalize_project_name(project_name)
     with _connect() as conn:
-        row = conn.execute("SELECT 1 FROM projects WHERE session_id = ? LIMIT 1", (session_id,)).fetchone()
+        row = conn.execute("SELECT 1 FROM projects WHERE project_name = ? LIMIT 1", (normalized_name,)).fetchone()
     return row is not None
 
 
-def create_project(session_id: str, project_name: str) -> None:
+def create_project(project_name: str) -> None:
+    normalized_name = normalize_project_name(project_name)
     with _connect() as conn:
         conn.execute(
             "INSERT INTO projects(session_id, project_name) VALUES(?, ?)",
-            (session_id, project_name.strip()),
+            (normalized_name, normalized_name),
         )
         conn.commit()
 
 
-def get_project_name(session_id: str) -> str | None:
+def upsert_project(project_name: str) -> None:
+    normalized_name = normalize_project_name(project_name)
+    with _connect() as conn:
+        conn.execute(
+            """
+            INSERT INTO projects(session_id, project_name)
+            VALUES(?, ?)
+            ON CONFLICT(session_id) DO UPDATE SET
+                project_name = excluded.project_name,
+                updated_at = CURRENT_TIMESTAMP
+            """,
+            (normalized_name, normalized_name),
+        )
+        conn.commit()
+
+
+def get_next_version_no(project_name: str) -> int:
+    normalized_name = normalize_project_name(project_name)
+    with _connect() as conn:
+        row = conn.execute(
+            "SELECT MAX(version_no) FROM simulation_versions WHERE session_id = ?",
+            (normalized_name,),
+        ).fetchone()
+    max_version = row[0] if row is not None else None
+    return int(max_version) + 1 if max_version is not None else 0
+
+
+def create_version(
+    *,
+    project_name: str,
+    source: str,
+    note: str | None,
+    params: dict[str, Any],
+    patch: dict[str, Any] | None = None,
+) -> int:
+    normalized_name = normalize_project_name(project_name)
+    version_no = get_next_version_no(normalized_name)
+    with _connect() as conn:
+        conn.execute(
+            """
+            INSERT INTO simulation_versions(session_id, version_no, source, note, params_json, patch_json)
+            VALUES(?, ?, ?, ?, ?, ?)
+            """,
+            (
+                normalized_name,
+                version_no,
+                source.strip(),
+                (note or "").strip(),
+                json.dumps(params if isinstance(params, dict) else {}),
+                json.dumps(patch if isinstance(patch, dict) else {}),
+            ),
+        )
+        conn.commit()
+    return version_no
+
+
+def list_versions(project_name: str, limit: int = 100) -> list[dict[str, Any]]:
+    normalized_name = normalize_project_name(project_name)
+    with _connect() as conn:
+        rows = conn.execute(
+            """
+            SELECT version_no, created_at, source, note
+            FROM simulation_versions
+            WHERE session_id = ?
+            ORDER BY version_no DESC, created_at DESC
+            LIMIT ?
+            """,
+            (normalized_name, int(limit)),
+        ).fetchall()
+    out: list[dict[str, Any]] = []
+    for version_no, created_at, source, note in rows:
+        out.append(
+            {
+                "version_no": int(version_no),
+                "created_at": str(created_at or ""),
+                "source": str(source or ""),
+                "note": str(note or ""),
+            }
+        )
+    return out
+
+
+def get_latest_params(project_name: str) -> dict[str, Any] | None:
+    normalized_name = normalize_project_name(project_name)
+    with _connect() as conn:
+        row = conn.execute(
+            """
+            SELECT params_json, version_no, created_at, source, note
+            FROM simulation_versions
+            WHERE session_id = ?
+            ORDER BY version_no DESC, created_at DESC
+            LIMIT 1
+            """,
+            (normalized_name,),
+        ).fetchone()
+    if row is None:
+        return None
+    params_json, version_no, created_at, source, note = row
+    return {
+        "params": json.loads(params_json) if params_json else {},
+        "version_no": int(version_no),
+        "created_at": str(created_at or ""),
+        "source": str(source or ""),
+        "note": str(note or ""),
+    }
+
+
+def get_version_by_no(project_name: str, version_no: int) -> dict[str, Any] | None:
+    normalized_name = normalize_project_name(project_name)
+    with _connect() as conn:
+        row = conn.execute(
+            """
+            SELECT params_json, patch_json, created_at, source, note
+            FROM simulation_versions
+            WHERE session_id = ? AND version_no = ?
+            LIMIT 1
+            """,
+            (normalized_name, int(version_no)),
+        ).fetchone()
+    if row is None:
+        return None
+    params_json, patch_json, created_at, source, note = row
+    return {
+        "params": json.loads(params_json) if params_json else {},
+        "patch": json.loads(patch_json) if patch_json else {},
+        "version_no": int(version_no),
+        "created_at": str(created_at or ""),
+        "source": str(source or ""),
+        "note": str(note or ""),
+    }
+
+
+def get_project_name(project_name: str) -> str | None:
+    normalized_name = normalize_project_name(project_name)
     with _connect() as conn:
         row = conn.execute(
             "SELECT project_name FROM projects WHERE session_id = ? LIMIT 1",
-            (session_id,),
+            (normalized_name,),
         ).fetchone()
     if row is None:
         return None
     return str(row[0]) if row[0] is not None else None
 
 
-def profile_snapshot_exists(session_id: str, profile_type: str) -> bool:
+def profile_snapshot_exists(project_name: str, profile_type: str) -> bool:
+    normalized_name = normalize_project_name(project_name)
     with _connect() as conn:
         row = conn.execute(
             "SELECT 1 FROM profile_snapshots WHERE session_id = ? AND profile_type = ? LIMIT 1",
-            (session_id, profile_type),
+            (normalized_name, profile_type),
         ).fetchone()
     return row is not None
 
 
 def save_profile_snapshot(
     *,
-    session_id: str,
+    project_name: str,
     profile_type: str,
     filename: str | None,
     series: list[Any] | None,
@@ -139,11 +278,12 @@ def save_profile_snapshot(
     metadata: dict[str, Any] | None = None,
     reason_text: str | None = None,
 ) -> bool:
-    """Insert/update one profile snapshot per (session_id, profile_type).
+    """Insert/update one profile snapshot per (project_name, profile_type).
 
     Returns True if an existing snapshot was overwritten.
     """
-    overwritten = profile_snapshot_exists(session_id, profile_type)
+    normalized_name = normalize_project_name(project_name)
+    overwritten = profile_snapshot_exists(normalized_name, profile_type)
     with _connect() as conn:
         conn.execute(
             """
@@ -161,7 +301,7 @@ def save_profile_snapshot(
                 updated_at = CURRENT_TIMESTAMP
             """,
             (
-                session_id,
+                normalized_name,
                 profile_type,
                 filename or "",
                 json.dumps(series if isinstance(series, list) else []),
@@ -175,7 +315,8 @@ def save_profile_snapshot(
     return overwritten
 
 
-def get_profile_snapshot(session_id: str, profile_type: str) -> dict[str, Any] | None:
+def get_profile_snapshot(project_name: str, profile_type: str) -> dict[str, Any] | None:
+    normalized_name = normalize_project_name(project_name)
     with _connect() as conn:
         row = conn.execute(
             """
@@ -184,7 +325,7 @@ def get_profile_snapshot(session_id: str, profile_type: str) -> dict[str, Any] |
             WHERE session_id = ? AND profile_type = ?
             LIMIT 1
             """,
-            (session_id, profile_type),
+            (normalized_name, profile_type),
         ).fetchone()
     if row is None:
         return None
@@ -202,11 +343,12 @@ def get_profile_snapshot(session_id: str, profile_type: str) -> dict[str, Any] |
 
 def save_tariff_snapshot(
     *,
-    session_id: str,
+    project_name: str,
     filename: str | None,
     selected_voltage_level: str | None,
     extracted_tariff: dict[str, Any] | None,
 ) -> None:
+    normalized_name = normalize_project_name(project_name)
     with _connect() as conn:
         conn.execute(
             """
@@ -219,7 +361,7 @@ def save_tariff_snapshot(
                 updated_at = CURRENT_TIMESTAMP
             """,
             (
-                session_id,
+                normalized_name,
                 filename or "",
                 selected_voltage_level or "",
                 json.dumps(extracted_tariff if isinstance(extracted_tariff, dict) else {}),
@@ -228,7 +370,8 @@ def save_tariff_snapshot(
         conn.commit()
 
 
-def get_tariff_snapshot(session_id: str) -> dict[str, Any] | None:
+def get_tariff_snapshot(project_name: str) -> dict[str, Any] | None:
+    normalized_name = normalize_project_name(project_name)
     with _connect() as conn:
         row = conn.execute(
             """
@@ -237,7 +380,7 @@ def get_tariff_snapshot(session_id: str) -> dict[str, Any] | None:
             WHERE session_id = ?
             LIMIT 1
             """,
-            (session_id,),
+            (normalized_name,),
         ).fetchone()
     if row is None:
         return None
@@ -247,4 +390,9 @@ def get_tariff_snapshot(session_id: str) -> dict[str, Any] | None:
         "extracted_tariff": json.loads(row[2]) if row[2] else {},
         "updated_at": str(row[3] or ""),
     }
+
+
+# Backward-compatible aliases while the rest of the app migrates terminology.
+normalize_project_name_to_session_id = normalize_project_name
+list_project_session_ids = list_project_names
 

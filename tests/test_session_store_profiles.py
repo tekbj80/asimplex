@@ -13,10 +13,10 @@ def test_profile_snapshot_persists_reason_and_timestamps(tmp_path: Path, monkeyp
     monkeypatch.setattr(session_store, "DB_PATH", test_db)
 
     session_store.init_db()
-    session_store.create_project("proj-a", "Project A")
+    session_store.create_project("proj-a")
 
     overwritten = session_store.save_profile_snapshot(
-        session_id="proj-a",
+        project_name="proj-a",
         profile_type="load",
         filename="load_v1.csv",
         series=[1.0, 2.0, 3.0],
@@ -38,7 +38,7 @@ def test_profile_snapshot_persists_reason_and_timestamps(tmp_path: Path, monkeyp
     time.sleep(1.1)
 
     overwritten = session_store.save_profile_snapshot(
-        session_id="proj-a",
+        project_name="proj-a",
         profile_type="load",
         filename="load_v2.csv",
         series=[9.0, 8.0, 7.0],

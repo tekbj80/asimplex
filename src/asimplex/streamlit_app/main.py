@@ -4,11 +4,13 @@ from __future__ import annotations
 
 import json
 import os
+from datetime import datetime
 
 import streamlit as st
 
 from asimplex.agent.tools import apply_parameter_patch, propose_parameter_patch
 from asimplex.llm_usage import record_llm_usage
+from asimplex.persistence.session_store import create_version
 from asimplex.streamlit_app.peak_shaving_table import render_peak_shaving_table
 from asimplex.streamlit_app.power_profiles_plot import render_power_profiles_plot
 from asimplex.streamlit_app.session_state import init_session_state
@@ -118,6 +120,16 @@ def render_chat_shell() -> None:
             if c1.button("Confirm apply + run", key="agent_confirm_apply_run", type="primary", disabled=bool(issues)):
                 updated_params = apply_parameter_patch(current_params, patch)
                 st.session_state["simulation_plan_params"] = updated_params
+                project_name = str(st.session_state.get("project_name", "") or "")
+                if project_name:
+                    patch_keys = sorted(list((patch or {}).keys())) if isinstance(patch, dict) else []
+                    create_version(
+                        project_name=project_name,
+                        source="agent_setting",
+                        note=f"Agent confirmed update ({datetime.now().strftime('%Y-%m-%d %H:%M:%S')}): {', '.join(patch_keys)}",
+                        params=updated_params if isinstance(updated_params, dict) else {},
+                        patch=patch if isinstance(patch, dict) else {},
+                    )
                 with st.spinner("Applying changes and running simulation..."):
                     ok, msg = run_simulation_plan_with_params(updated_params)
                 history.append({"role": "assistant", "content": msg})
