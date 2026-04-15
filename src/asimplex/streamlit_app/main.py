@@ -9,9 +9,9 @@ import streamlit as st
 
 from asimplex.agent.tools import apply_parameter_patch, propose_parameter_patch
 from asimplex.llm_usage import record_llm_usage
-from asimplex.streamlit_app.load_profile_section import init_session_state
 from asimplex.streamlit_app.peak_shaving_table import render_peak_shaving_table
 from asimplex.streamlit_app.power_profiles_plot import render_power_profiles_plot
+from asimplex.streamlit_app.session_state import init_session_state
 from asimplex.streamlit_app.sidebar import render_sidebar
 from asimplex.streamlit_app.simulation_plan_section import (
     render_simulation_plan_section,
