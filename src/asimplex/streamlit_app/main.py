@@ -52,6 +52,9 @@ def render_chat_shell() -> None:
                     reasoning = str(agent_result.get("reasoning", "")).strip()
                     proposed_params = agent_result.get("proposed_params", {})
                     next_step = str(agent_result.get("next_step", "insufficient_data"))
+                    patch = agent_result.get("patch", {})
+                    issues = agent_result.get("issues", [])
+                    selected_battery = agent_result.get("selected_battery")
 
                     response_parts = []
                     if reasoning:
@@ -68,6 +71,9 @@ def render_chat_shell() -> None:
                         st.session_state["agent_pending_proposal"] = {
                             "proposed_params": proposed_params,
                             "reasoning": reasoning,
+                            "patch": patch if isinstance(patch, dict) else {},
+                            "issues": issues if isinstance(issues, list) else [],
+                            "selected_battery": selected_battery if isinstance(selected_battery, dict) else None,
                         }
                     else:
                         st.session_state["agent_pending_proposal"] = None
@@ -80,10 +86,14 @@ def render_chat_shell() -> None:
     if isinstance(pending, dict):
         proposed_params = pending.get("proposed_params", {})
         current_params = st.session_state.get("simulation_plan_params", {})
-        patch_result = propose_parameter_patch(current_params, proposed_params if isinstance(proposed_params, dict) else {})
-        patch = patch_result.get("patch", {})
-        issues = patch_result.get("issues", [])
-        selected_battery = patch_result.get("selected_battery")
+        patch = pending.get("patch", {})
+        issues = pending.get("issues", [])
+        selected_battery = pending.get("selected_battery")
+        if not isinstance(patch, dict) or not isinstance(issues, list):
+            patch_result = propose_parameter_patch(current_params, proposed_params if isinstance(proposed_params, dict) else {})
+            patch = patch_result.get("patch", {})
+            issues = patch_result.get("issues", [])
+            selected_battery = patch_result.get("selected_battery")
 
         with st.container(border=True):
             st.markdown("**Pending parameter proposal**")

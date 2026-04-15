@@ -12,7 +12,7 @@ from langchain.agents.structured_output import ToolStrategy
 from langchain.chat_models import init_chat_model
 from langchain.tools import tool
 
-from asimplex.agent.tools import get_llm_context_payloads, search_price_list
+from asimplex.agent.tools import get_llm_simulation_context_payload, propose_parameter_patch, search_price_list
 from asimplex.llm_usage import sum_usage_from_langchain_messages
 
 SYSTEM_PROMPT = """
@@ -32,6 +32,10 @@ You must NOT propose changes to:
 Always include concise reasoning and mention EVO logic:
 - evo_threshold is SOC p.u. above which EVO is activated.
 - lsk_charge_from_grid influences charging toward evo_threshold.
+
+Before asking for confirmation, you MUST call tool `draft_parameter_patch`
+with your candidate params so validation and battery lookup are checked.
+Only set next_step="confirm" when issues is empty and patch is non-empty.
 """.strip()
 
 
@@ -40,6 +44,9 @@ class AgentResponse:
     reasoning: str
     proposed_params: dict[str, Any]
     next_step: str
+    patch: dict[str, Any] | None = None
+    issues: list[str] | None = None
+    selected_battery: dict[str, Any] | None = None
 
 
 def _extract_json_object(text: str) -> dict[str, Any]:
@@ -60,7 +67,8 @@ def _extract_json_object(text: str) -> dict[str, Any]:
 
 
 def run_tuning_agent(*, user_message: str, session_state: dict[str, Any]) -> dict[str, Any]:
-    context_payloads = get_llm_context_payloads(session_state)
+    context_payloads = get_llm_simulation_context_payload(session_state)
+    current_params = context_payloads.get("simulation_plan_params", {})
 
     @tool
     def get_context_payloads() -> str:
@@ -72,9 +80,18 @@ def run_tuning_agent(*, user_message: str, session_state: dict[str, Any]) -> dic
         """Search non_code_resources/price_list.csv by product name, inverter, or product ID."""
         return json.dumps(search_price_list(query, limit=12), indent=2)
 
+    @tool
+    def draft_parameter_patch(proposed_params_json: str) -> str:
+        """Validate a proposed parameter object and return patch, selected_battery, and issues."""
+        proposed_obj = _extract_json_object(proposed_params_json)
+        if not isinstance(proposed_obj, dict):
+            proposed_obj = {}
+        result_obj = propose_parameter_patch(current_params if isinstance(current_params, dict) else {}, proposed_obj)
+        return json.dumps(result_obj, indent=2)
+
     model_name = os.getenv("ASIMPLEX_AGENT_MODEL", "gpt-4.1-mini")
     llm = init_chat_model(model_name, temperature=0)
-    tools = [get_context_payloads, lookup_price_list]
+    tools = [get_context_payloads, lookup_price_list, draft_parameter_patch]
     agent = create_agent(
         model=llm,
         system_prompt=SYSTEM_PROMPT,
@@ -90,6 +107,9 @@ def run_tuning_agent(*, user_message: str, session_state: dict[str, Any]) -> dic
             "reasoning": structured.reasoning,
             "proposed_params": structured.proposed_params or {},
             "next_step": structured.next_step,
+            "patch": structured.patch or {},
+            "issues": structured.issues or [],
+            "selected_battery": structured.selected_battery,
         }
     elif isinstance(structured, dict):
         parsed = dict(structured)
@@ -115,6 +135,29 @@ def run_tuning_agent(*, user_message: str, session_state: dict[str, Any]) -> dic
     parsed.setdefault("reasoning", "")
     parsed.setdefault("proposed_params", {})
     parsed.setdefault("next_step", "insufficient_data")
+    parsed.setdefault("patch", {})
+    parsed.setdefault("issues", [])
+    parsed.setdefault("selected_battery", None)
+
+    # Ensure a validated patch result is always present.
+    proposed_params = parsed.get("proposed_params", {})
+    if isinstance(proposed_params, dict):
+        patch_result = propose_parameter_patch(
+            current_params if isinstance(current_params, dict) else {},
+            proposed_params,
+        )
+        if not isinstance(parsed.get("patch"), dict) or not parsed.get("patch"):
+            parsed["patch"] = patch_result.get("patch", {})
+        if not isinstance(parsed.get("issues"), list) or not parsed.get("issues"):
+            parsed["issues"] = patch_result.get("issues", [])
+        if parsed.get("selected_battery") is None:
+            parsed["selected_battery"] = patch_result.get("selected_battery")
+
+    patch_nonempty = isinstance(parsed.get("patch"), dict) and bool(parsed.get("patch"))
+    issues_empty = isinstance(parsed.get("issues"), list) and not parsed.get("issues")
+    if patch_nonempty and issues_empty:
+        parsed["next_step"] = "confirm"
+
     parsed["usage"] = {"input_tokens": usage_in, "output_tokens": usage_out}
     return parsed
 

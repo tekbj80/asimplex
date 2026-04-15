@@ -43,7 +43,7 @@ def search_price_list(query: str, *, limit: int = 10) -> list[dict[str, Any]]:
     return df.head(limit).to_dict(orient="records")
 
 
-def get_llm_context_payloads(session_state: dict[str, Any]) -> dict[str, Any]:
+def get_llm_simulation_context_payload(session_state: dict[str, Any]) -> dict[str, Any]:
     return {
         "profile_summary_json": session_state.get("profile_summary_json") or {},
         "peak_shaving_json": session_state.get("peak_shaving_json") or {},
