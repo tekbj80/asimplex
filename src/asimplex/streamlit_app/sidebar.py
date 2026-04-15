@@ -10,12 +10,8 @@ from asimplex.streamlit_app.load_profile_section import render_load_profile_sect
 from asimplex.streamlit_app.pv_profile_section import render_pv_profile_section
 
 
-def render_token_usage_into(slot) -> None:
-    """Fill a sidebar container/placeholder with current `llm_usage` from session state.
-
-    Must run *after* any code that calls `record_llm_usage` on this run (tariff section,
-    chat shell), otherwise Streamlit paints stale values until the next rerun.
-    """
+def render_token_usage_table() -> None:
+    """Render a fixed-height, scrollable token/cost usage table in sidebar."""
     raw = st.session_state.get("llm_usage")
     u = raw if isinstance(raw, dict) else {}
     total_in = int(u.get("total_input", 0) or 0)
@@ -41,7 +37,7 @@ def render_token_usage_into(slot) -> None:
         rows_df["cost_eur"] = pd.to_numeric(rows_df["cost_eur"], errors="coerce").fillna(0.0).map(
             lambda x: f"EUR {x:.6f}"
         )
-    with slot.container():
+    with st.sidebar.expander("LLM usage", expanded=False):
         st.dataframe(
             rows_df,
             width="stretch",
@@ -54,3 +50,4 @@ def render_sidebar() -> None:
     render_load_profile_section()
     render_pv_profile_section()
     render_electrical_tariff_section()
+    render_token_usage_table()

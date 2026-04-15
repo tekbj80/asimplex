@@ -152,13 +152,6 @@ def render_electrical_tariff_section() -> None:
         )
         extracted_tariff = tariff_state.get("llm_extracted_tariff")
         llm_response_debug_text = str(tariff_state.get("llm_response_debug_text", ""))
-        st.text_area(
-            "LLM/API raw response",
-            value=llm_response_debug_text,
-            height=220,
-            key="tariff_llm_raw_response_text_area",
-            disabled=True,
-        )
         if st.button("Extract tariff from PDF", key="tariff_extract_button", type="secondary"):
             if uploaded_tariff_pdf is None:
                 st.error("Please upload a PDF first.")
@@ -187,10 +180,13 @@ def render_electrical_tariff_section() -> None:
                         "llm_response_debug_text": llm_response_debug_text,
                     }
                     st.success("Tariff values extracted.")
-                    st.json(extracted_tariff)
                 except Exception as exc:
                     llm_response_debug_text = str(exc)
                     st.error(f"Extraction failed: {exc}")
+
+        if isinstance(extracted_tariff, dict):
+            st.info("Extracted values have been automatically updated to the simulation inputs.")
+            st.code(json.dumps(extracted_tariff, indent=2), language="json")
 
         st.session_state["electrical_tariff"] = {
             "selected_voltage_level": selected_voltage_level,

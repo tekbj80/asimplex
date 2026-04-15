@@ -12,7 +12,7 @@ from asimplex.llm_usage import record_llm_usage
 from asimplex.streamlit_app.load_profile_section import init_session_state
 from asimplex.streamlit_app.peak_shaving_table import render_peak_shaving_table
 from asimplex.streamlit_app.power_profiles_plot import render_power_profiles_plot
-from asimplex.streamlit_app.sidebar import render_sidebar, render_token_usage_into
+from asimplex.streamlit_app.sidebar import render_sidebar
 from asimplex.streamlit_app.simulation_plan_section import (
     render_simulation_plan_section,
     run_simulation_plan_with_params,
@@ -123,14 +123,12 @@ def main() -> None:
     init_session_state()
     st.sidebar.title("asimplex")
     st.sidebar.caption("Navigation")
-    token_usage_slot = st.sidebar.empty()
     st.sidebar.divider()
     render_sidebar()
     render_power_profiles_plot()
     render_peak_shaving_table()
     render_simulation_plan_section()
     render_chat_shell()
-    render_token_usage_into(token_usage_slot)
 
 
 if __name__ == "__main__":
