@@ -12,6 +12,7 @@ from asimplex.agent.tools import apply_parameter_patch, propose_parameter_patch
 from asimplex.llm_usage import record_llm_usage
 from asimplex.observability.app_log_store import log_event
 from asimplex.persistence.session_store import append_llm_usage_event, create_version
+from asimplex.streamlit_app.log_viewer_section import render_log_viewer_section
 from asimplex.streamlit_app.peak_shaving_table import render_peak_shaving_table
 from asimplex.streamlit_app.power_profiles_plot import render_power_profiles_plot
 from asimplex.streamlit_app.session_state import init_session_state
@@ -183,11 +184,16 @@ def main() -> None:
     st.sidebar.title("asimplex")
     st.sidebar.caption("Navigation")
     render_sidebar()
-    render_power_profiles_plot()
-    render_peak_shaving_table()
-    render_simulation_plan_section()
-    render_simulation_results_section()
-    render_chat_shell()
+    workspace_tab, chat_tab, logs_tab = st.tabs(["Workspace", "Chat", "Logs"])
+    with workspace_tab:
+        render_power_profiles_plot()
+        render_peak_shaving_table()
+        render_simulation_plan_section()
+        render_simulation_results_section()
+    with chat_tab:
+        render_chat_shell()
+    with logs_tab:
+        render_log_viewer_section()
 
 
 if __name__ == "__main__":
