@@ -4,10 +4,13 @@ from __future__ import annotations
 
 import json
 import sqlite3
+from datetime import datetime
 from pathlib import Path
 from typing import Any
+from zoneinfo import ZoneInfo
 
 DB_PATH = Path(__file__).resolve().parents[3] / ".asimplex_app_logs.db"
+BERLIN_TZ = ZoneInfo("Europe/Berlin")
 
 
 def _connect() -> sqlite3.Connection:
@@ -42,6 +45,10 @@ def _safe_json_dumps(value: Any) -> str:
         return json.dumps({"_serialization_error": True, "repr": repr(value)})
 
 
+def _berlin_now_iso() -> str:
+    return datetime.now(BERLIN_TZ).isoformat(timespec="seconds")
+
+
 def log_event(
     *,
     project_name: str | None,
@@ -58,12 +65,13 @@ def log_event(
         conn.execute(
             """
             INSERT INTO app_events(
-                project_name, source, event_type, status, tool_invocations_json, message, error, payload_json
+                project_name, created_at, source, event_type, status, tool_invocations_json, message, error, payload_json
             )
-            VALUES(?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 (project_name or "").strip() or None,
+                _berlin_now_iso(),
                 (source or "").strip() or "unknown",
                 (event_type or "").strip() or "unknown",
                 (status or "").strip() or "unknown",
