@@ -36,10 +36,16 @@ def _hydrate_profiles_for_session(session_id: str) -> None:
     st.session_state["load_profile_description"] = None
     st.session_state["load_profile_filename"] = None
     st.session_state["load_profile_parse_attempts"] = None
+    st.session_state["load_profile_reason_text"] = ""
+    st.session_state["load_profile_created_at"] = ""
+    st.session_state["load_profile_updated_at"] = ""
     st.session_state["pv_profile_series"] = None
     st.session_state["pv_profile_description"] = None
     st.session_state["pv_profile_filename"] = None
     st.session_state["pv_profile_parse_attempts"] = None
+    st.session_state["pv_profile_reason_text"] = ""
+    st.session_state["pv_profile_created_at"] = ""
+    st.session_state["pv_profile_updated_at"] = ""
 
     if isinstance(load_snapshot, dict):
         series = load_snapshot.get("series", [])
@@ -47,6 +53,9 @@ def _hydrate_profiles_for_session(session_id: str) -> None:
         st.session_state["load_profile_description"] = load_snapshot.get("description")
         st.session_state["load_profile_filename"] = load_snapshot.get("filename")
         st.session_state["load_profile_parse_attempts"] = load_snapshot.get("parse_attempts")
+        st.session_state["load_profile_reason_text"] = load_snapshot.get("reason_text", "")
+        st.session_state["load_profile_created_at"] = load_snapshot.get("created_at", "")
+        st.session_state["load_profile_updated_at"] = load_snapshot.get("updated_at", "")
         if isinstance(series, list) and series:
             apply_profile_to_power_profiles(ProfileColumn.SITE_LOAD.column_name, series)
 
@@ -56,6 +65,9 @@ def _hydrate_profiles_for_session(session_id: str) -> None:
         st.session_state["pv_profile_description"] = pv_snapshot.get("description")
         st.session_state["pv_profile_filename"] = pv_snapshot.get("filename")
         st.session_state["pv_profile_parse_attempts"] = pv_snapshot.get("parse_attempts")
+        st.session_state["pv_profile_reason_text"] = pv_snapshot.get("reason_text", "")
+        st.session_state["pv_profile_created_at"] = pv_snapshot.get("created_at", "")
+        st.session_state["pv_profile_updated_at"] = pv_snapshot.get("updated_at", "")
         metadata = pv_snapshot.get("metadata", {})
         if isinstance(metadata, dict) and str(metadata.get("source", "")) == "pvgis":
             if "project_lat" in metadata:

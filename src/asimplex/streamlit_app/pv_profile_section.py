@@ -11,7 +11,7 @@ import streamlit as st
 from streamlit_folium import st_folium
 
 from asimplex.constants import HOUR_FRAC
-from asimplex.persistence.session_store import save_profile_snapshot
+from asimplex.persistence.session_store import get_profile_snapshot, save_profile_snapshot
 from asimplex.streamlit_app.load_profile_section import (
     apply_profile_to_power_profiles,
     refresh_power_profiles_metrics,
@@ -90,6 +90,11 @@ def render_pv_profile_section() -> None:
             accept_multiple_files=False,
             key="pv_profile_upload",
         )
+        update_reason = st.text_input(
+            "Reason for updating PV profile",
+            key="pv_profile_update_reason",
+            placeholder="e.g. Updated using revised generation assumptions",
+        )
 
         if uploaded_file is not None:
             try:
@@ -113,7 +118,13 @@ def render_pv_profile_section() -> None:
                             description=result.get("description"),
                             parse_attempts=result.get("parse_attempts"),
                             metadata={"source": "csv_upload"},
+                            reason_text=update_reason,
                         )
+                        snapshot = get_profile_snapshot(session_id, "pv")
+                        if isinstance(snapshot, dict):
+                            st.session_state["pv_profile_reason_text"] = snapshot.get("reason_text", "")
+                            st.session_state["pv_profile_created_at"] = snapshot.get("created_at", "")
+                            st.session_state["pv_profile_updated_at"] = snapshot.get("updated_at", "")
                         if overwritten:
                             st.info("PV profile already existed for this project and has been overwritten.")
                         else:
@@ -238,7 +249,13 @@ def render_pv_profile_section() -> None:
                             "azimuth_deg": float(azimuth),
                             "loss_percent": float(loss),
                         },
+                        reason_text=update_reason,
                     )
+                    snapshot = get_profile_snapshot(session_id, "pv")
+                    if isinstance(snapshot, dict):
+                        st.session_state["pv_profile_reason_text"] = snapshot.get("reason_text", "")
+                        st.session_state["pv_profile_created_at"] = snapshot.get("created_at", "")
+                        st.session_state["pv_profile_updated_at"] = snapshot.get("updated_at", "")
                     if overwritten:
                         st.info("PV profile already existed for this project and has been overwritten.")
                     else:
@@ -252,5 +269,17 @@ def render_pv_profile_section() -> None:
         loaded_filename = st.session_state.get("pv_profile_filename")
         if isinstance(loaded_filename, str) and loaded_filename.strip():
             st.caption(f"Loaded file: `{loaded_filename}`")
+        pv_created_at = str(st.session_state.get("pv_profile_created_at", "") or "")
+        pv_updated_at = str(st.session_state.get("pv_profile_updated_at", "") or "")
+        pv_reason_text = str(st.session_state.get("pv_profile_reason_text", "") or "")
+        if pv_created_at or pv_updated_at or pv_reason_text:
+            meta_parts: list[str] = []
+            if pv_created_at:
+                meta_parts.append(f"Created: {pv_created_at}")
+            if pv_updated_at:
+                meta_parts.append(f"Updated: {pv_updated_at}")
+            if pv_reason_text:
+                meta_parts.append(f"Reason: {pv_reason_text}")
+            st.caption(" | ".join(meta_parts))
         if description is not None:
             render_description_table(description, parse_attempts=parse_attempts)

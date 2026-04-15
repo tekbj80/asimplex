@@ -7,7 +7,7 @@ from io import BytesIO
 import pandas as pd
 import streamlit as st
 
-from asimplex.persistence.session_store import save_profile_snapshot
+from asimplex.persistence.session_store import get_profile_snapshot, save_profile_snapshot
 from asimplex.streamlit_app.profile_columns import ProfileColumn
 from asimplex.tools.calculations import calculate_full_hour_equivalent
 from asimplex.tools.formatting import format_metric_name, format_metric_value
@@ -118,6 +118,11 @@ def render_load_profile_section() -> None:
             accept_multiple_files=False,
             key="load_profile_upload",
         )
+        update_reason = st.text_input(
+            "Reason for updating load profile",
+            key="load_profile_update_reason",
+            placeholder="e.g. Updated from latest metering export",
+        )
 
         if uploaded_file is not None:
             try:
@@ -141,7 +146,13 @@ def render_load_profile_section() -> None:
                             description=result.get("description"),
                             parse_attempts=result.get("parse_attempts"),
                             metadata={"source": "csv_upload"},
+                            reason_text=update_reason,
                         )
+                        snapshot = get_profile_snapshot(session_id, "load")
+                        if isinstance(snapshot, dict):
+                            st.session_state["load_profile_reason_text"] = snapshot.get("reason_text", "")
+                            st.session_state["load_profile_created_at"] = snapshot.get("created_at", "")
+                            st.session_state["load_profile_updated_at"] = snapshot.get("updated_at", "")
                         if overwritten:
                             st.info("Load profile already existed for this project and has been overwritten.")
                         else:
@@ -157,5 +168,17 @@ def render_load_profile_section() -> None:
         loaded_filename = st.session_state.get("load_profile_filename")
         if isinstance(loaded_filename, str) and loaded_filename.strip():
             st.caption(f"Loaded file: `{loaded_filename}`")
+        load_created_at = str(st.session_state.get("load_profile_created_at", "") or "")
+        load_updated_at = str(st.session_state.get("load_profile_updated_at", "") or "")
+        load_reason_text = str(st.session_state.get("load_profile_reason_text", "") or "")
+        if load_created_at or load_updated_at or load_reason_text:
+            meta_parts: list[str] = []
+            if load_created_at:
+                meta_parts.append(f"Created: {load_created_at}")
+            if load_updated_at:
+                meta_parts.append(f"Updated: {load_updated_at}")
+            if load_reason_text:
+                meta_parts.append(f"Reason: {load_reason_text}")
+            st.caption(" | ".join(meta_parts))
         if description is not None:
             render_description_table(description, parse_attempts=parse_attempts)
