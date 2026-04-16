@@ -201,7 +201,12 @@ def main() -> None:
     st.set_page_config(page_title="asimplex", page_icon=":speech_balloon:", layout="wide")
     init_session_state()
     st.sidebar.title("asimplex")
-    st.sidebar.caption("Navigation")
+    st.sidebar.markdown(
+        "AI-Assisted Simulation for Simplifying Complexity<br>"
+        "Part of the IDEAS project:<br>"
+        "<b>I</b>ntegrated <b>D</b>ata-Driven <b>E</b>nergy <b>A</b>nalytics and <b>S</b>izing",
+    unsafe_allow_html=True,
+)
     render_sidebar()
     workspace_tab, chat_tab, logs_tab = st.tabs(["Workspace", "Chat", "Logs"])
     with workspace_tab:

@@ -48,6 +48,7 @@ def get_llm_simulation_context_payload(session_state: dict[str, Any]) -> dict[st
         "profile_summary_json": session_state.get("profile_summary_json") or {},
         "peak_shaving_json": session_state.get("peak_shaving_json") or {},
         "simulation_plan_params": session_state.get("simulation_plan_params") or {},
+        "simulation_benchmark_context_json": session_state.get("simulation_benchmark_context_json") or {},
     }
 
 
