@@ -4,6 +4,14 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
+
+from asimplex.constants import (
+    AGENT_HISTORY_STRATEGY_LAST_MESSAGES,
+    AGENT_HISTORY_STRATEGY_LAST_TURNS,
+    AGENT_HISTORY_STRATEGY_SUMMARY,
+    AGENT_HISTORY_STRATEGY_TOKEN_BUDGET,
+)
 from asimplex.persistence import chat_history_store
 
 
@@ -53,3 +61,66 @@ def test_thread_isolation_and_clear(tmp_path: Path, monkeypatch) -> None:
         "u1",
         "a1",
     ]
+
+
+def test_trim_for_context_last_messages() -> None:
+    messages = [
+        HumanMessage(content="u1"),
+        AIMessage(content="a1"),
+        HumanMessage(content="u2"),
+        AIMessage(content="a2"),
+    ]
+    trimmed = chat_history_store.trim_for_context(
+        messages,
+        strategy=AGENT_HISTORY_STRATEGY_LAST_MESSAGES,
+        max_messages=2,
+    )
+    assert [str(msg.content) for msg in trimmed] == ["u2", "a2"]
+
+
+def test_trim_for_context_last_turns() -> None:
+    messages = [
+        HumanMessage(content="u1"),
+        AIMessage(content="a1"),
+        HumanMessage(content="u2"),
+        AIMessage(content="a2"),
+        HumanMessage(content="u3"),
+        AIMessage(content="a3"),
+    ]
+    trimmed = chat_history_store.trim_for_context(
+        messages,
+        strategy=AGENT_HISTORY_STRATEGY_LAST_TURNS,
+        max_turns=2,
+    )
+    assert [str(msg.content) for msg in trimmed] == ["u2", "a2", "u3", "a3"]
+
+
+def test_trim_for_context_token_budget() -> None:
+    messages = [
+        HumanMessage(content="tiny"),
+        AIMessage(content="small reply"),
+        HumanMessage(content="x" * 800),
+    ]
+    trimmed = chat_history_store.trim_for_context(
+        messages,
+        strategy=AGENT_HISTORY_STRATEGY_TOKEN_BUDGET,
+        max_tokens=50,
+    )
+    assert [str(msg.content) for msg in trimmed] == ["tiny", "small reply"]
+
+
+def test_trim_for_context_summary() -> None:
+    messages = [
+        HumanMessage(content="first question"),
+        AIMessage(content="first answer"),
+        HumanMessage(content="second question"),
+        AIMessage(content="second answer"),
+    ]
+    trimmed = chat_history_store.trim_for_context(
+        messages,
+        strategy=AGENT_HISTORY_STRATEGY_SUMMARY,
+        max_turns=1,
+    )
+    assert isinstance(trimmed[0], SystemMessage)
+    assert "Summary of earlier chat context" in str(trimmed[0].content)
+    assert [str(msg.content) for msg in trimmed[1:]] == ["second question", "second answer"]

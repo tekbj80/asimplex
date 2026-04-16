@@ -13,6 +13,12 @@ from langchain.chat_models import init_chat_model
 from langchain_core.messages import HumanMessage
 from langchain.tools import tool
 
+from asimplex.constants import (
+    ASIMPLEX_AGENT_HISTORY_MAX_MESSAGES,
+    ASIMPLEX_AGENT_HISTORY_MAX_TOKENS,
+    ASIMPLEX_AGENT_HISTORY_MAX_TURNS,
+    ASIMPLEX_AGENT_HISTORY_STRATEGY,
+)
 from asimplex.agent.tools import (
     get_llm_simulation_context_payload,
     get_proposal_json_format as get_proposal_json_format_contract,
@@ -104,9 +110,18 @@ def run_tuning_agent(*, user_message: str, session_state: dict[str, Any]) -> dic
     context_payloads = get_llm_simulation_context_payload(session_state)
     current_params = context_payloads.get("simulation_plan_params", {})
     project_name = str(session_state.get("project_name", "") or "").strip()
-    max_history_messages = int(os.getenv("ASIMPLEX_AGENT_HISTORY_MAX_MESSAGES", "12"))
+    history_strategy = str(session_state.get("agent_history_strategy", ASIMPLEX_AGENT_HISTORY_STRATEGY))
+    max_history_messages = int(session_state.get("agent_history_max_messages", ASIMPLEX_AGENT_HISTORY_MAX_MESSAGES))
+    max_history_turns = int(session_state.get("agent_history_max_turns", ASIMPLEX_AGENT_HISTORY_MAX_TURNS))
+    max_history_tokens = int(session_state.get("agent_history_max_tokens", ASIMPLEX_AGENT_HISTORY_MAX_TOKENS))
     history_messages = list_messages(project_name) if project_name else []
-    context_messages = trim_for_context(history_messages, max_messages=max_history_messages)
+    context_messages = trim_for_context(
+        history_messages,
+        strategy=history_strategy,
+        max_messages=max_history_messages,
+        max_turns=max_history_turns,
+        max_tokens=max_history_tokens,
+    )
 
     @tool
     def get_context_payloads() -> str:

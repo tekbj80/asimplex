@@ -5,8 +5,18 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, trim_messages
+from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage, trim_messages
 
+from asimplex.constants import (
+    AGENT_HISTORY_STRATEGY_LAST_MESSAGES,
+    AGENT_HISTORY_STRATEGY_LAST_TURNS,
+    AGENT_HISTORY_STRATEGY_SUMMARY,
+    AGENT_HISTORY_STRATEGY_TOKEN_BUDGET,
+    ASIMPLEX_AGENT_HISTORY_MAX_MESSAGES,
+    ASIMPLEX_AGENT_HISTORY_MAX_TOKENS,
+    ASIMPLEX_AGENT_HISTORY_MAX_TURNS,
+    ASIMPLEX_AGENT_HISTORY_STRATEGY,
+)
 from asimplex.persistence.session_store import DB_PATH
 
 DEFAULT_THREAD_ID = "tuning_chat"
@@ -54,7 +64,90 @@ def clear_messages(project_name: str, thread_id: str = DEFAULT_THREAD_ID) -> Non
     _new_history(project, thread_id).clear()
 
 
-def trim_for_context(messages: list[BaseMessage], max_messages: int = 12) -> list[BaseMessage]:
+def _approximate_token_count(messages: list[BaseMessage] | BaseMessage) -> int:
+    if isinstance(messages, BaseMessage):
+        content = messages.content if isinstance(messages.content, str) else str(messages.content)
+        return max(1, len(content) // 4)
+    return sum(_approximate_token_count(msg) for msg in messages)
+
+
+def _trim_last_turns(messages: list[BaseMessage], max_turns: int) -> list[BaseMessage]:
+    if max_turns <= 0:
+        return []
+    selected: list[BaseMessage] = []
+    turns_seen = 0
+    waiting_for_user_boundary = False
+    for msg in reversed(messages):
+        selected.append(msg)
+        if isinstance(msg, AIMessage):
+            waiting_for_user_boundary = True
+            continue
+        if isinstance(msg, HumanMessage):
+            if waiting_for_user_boundary:
+                turns_seen += 1
+                waiting_for_user_boundary = False
+            else:
+                turns_seen += 1
+            if turns_seen >= max_turns:
+                break
+    return list(reversed(selected))
+
+
+def _summarize_messages(messages: list[BaseMessage], kept_messages: list[BaseMessage]) -> list[BaseMessage]:
+    kept_count = len(kept_messages)
+    dropped_messages = messages[:-kept_count] if kept_count < len(messages) else []
+    if not dropped_messages:
+        return kept_messages
+    summary_lines: list[str] = []
+    for msg in dropped_messages:
+        role = "assistant"
+        if isinstance(msg, HumanMessage):
+            role = "user"
+        content = msg.content if isinstance(msg.content, str) else str(msg.content)
+        compact = " ".join(content.split())
+        if compact:
+            summary_lines.append(f"- {role}: {compact[:160]}")
+    if not summary_lines:
+        return kept_messages
+    summary_message = SystemMessage(
+        content="Summary of earlier chat context:\n" + "\n".join(summary_lines[-8:])
+    )
+    return [summary_message, *kept_messages]
+
+
+def _trim_token_budget(messages: list[BaseMessage], max_tokens: int) -> list[BaseMessage]:
+    if max_tokens <= 0:
+        return []
+    kept: list[BaseMessage] = []
+    used_tokens = 0
+    for msg in reversed(messages):
+        msg_tokens = _approximate_token_count(msg)
+        if msg_tokens > max_tokens:
+            continue
+        if used_tokens + msg_tokens > max_tokens:
+            break
+        kept.append(msg)
+        used_tokens += msg_tokens
+    return list(reversed(kept))
+
+
+def trim_for_context(
+    messages: list[BaseMessage],
+    *,
+    strategy: str = ASIMPLEX_AGENT_HISTORY_STRATEGY,
+    max_messages: int = ASIMPLEX_AGENT_HISTORY_MAX_MESSAGES,
+    max_turns: int = ASIMPLEX_AGENT_HISTORY_MAX_TURNS,
+    max_tokens: int = ASIMPLEX_AGENT_HISTORY_MAX_TOKENS,
+) -> list[BaseMessage]:
+    if not messages:
+        return []
+    if strategy == AGENT_HISTORY_STRATEGY_LAST_TURNS:
+        return _trim_last_turns(messages, max_turns=max_turns)
+    if strategy == AGENT_HISTORY_STRATEGY_TOKEN_BUDGET:
+        return _trim_token_budget(messages, max_tokens=max_tokens)
+    if strategy == AGENT_HISTORY_STRATEGY_SUMMARY:
+        kept_messages = _trim_last_turns(messages, max_turns=max_turns)
+        return _summarize_messages(messages, kept_messages)
     if max_messages <= 0:
         return []
     return trim_messages(

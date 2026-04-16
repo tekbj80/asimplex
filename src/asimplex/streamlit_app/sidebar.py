@@ -5,6 +5,13 @@ from __future__ import annotations
 import pandas as pd
 import streamlit as st
 
+from asimplex.constants import (
+    AGENT_HISTORY_STRATEGIES,
+    AGENT_HISTORY_STRATEGY_LAST_MESSAGES,
+    AGENT_HISTORY_STRATEGY_LAST_TURNS,
+    AGENT_HISTORY_STRATEGY_SUMMARY,
+    AGENT_HISTORY_STRATEGY_TOKEN_BUDGET,
+)
 from asimplex.persistence.session_store import (
     create_project,
     get_latest_params,
@@ -201,6 +208,56 @@ def render_token_usage_table() -> None:
             lambda x: f"EUR {x:.6f}"
         )
     with st.sidebar.expander("LLM usage", expanded=False):
+        st.markdown("**Chat history context**")
+        strategy_labels = {
+            AGENT_HISTORY_STRATEGY_LAST_MESSAGES: "Last messages",
+            AGENT_HISTORY_STRATEGY_LAST_TURNS: "Last turns",
+            AGENT_HISTORY_STRATEGY_TOKEN_BUDGET: "Token budget",
+            AGENT_HISTORY_STRATEGY_SUMMARY: "Summary + recent turns",
+        }
+        current_strategy = str(st.session_state.get("agent_history_strategy", AGENT_HISTORY_STRATEGY_LAST_MESSAGES))
+        st.selectbox(
+            "History strategy",
+            options=AGENT_HISTORY_STRATEGIES,
+            index=AGENT_HISTORY_STRATEGIES.index(current_strategy)
+            if current_strategy in AGENT_HISTORY_STRATEGIES
+            else 0,
+            format_func=lambda x: strategy_labels.get(x, x),
+            key="agent_history_strategy",
+            help="Controls how much stored chat history is sent to the agent on each turn.",
+        )
+        st.slider(
+            "Max messages",
+            min_value=2,
+            max_value=40,
+            value=int(st.session_state.get("agent_history_max_messages", 12) or 12),
+            step=1,
+            key="agent_history_max_messages",
+            disabled=st.session_state.get("agent_history_strategy") != AGENT_HISTORY_STRATEGY_LAST_MESSAGES,
+        )
+        st.slider(
+            "Max turns",
+            min_value=1,
+            max_value=12,
+            value=int(st.session_state.get("agent_history_max_turns", 4) or 4),
+            step=1,
+            key="agent_history_max_turns",
+            disabled=st.session_state.get("agent_history_strategy")
+            not in {AGENT_HISTORY_STRATEGY_LAST_TURNS, AGENT_HISTORY_STRATEGY_SUMMARY},
+        )
+        st.slider(
+            "Max tokens",
+            min_value=250,
+            max_value=8000,
+            value=int(st.session_state.get("agent_history_max_tokens", 2000) or 2000),
+            step=250,
+            key="agent_history_max_tokens",
+            disabled=st.session_state.get("agent_history_strategy") != AGENT_HISTORY_STRATEGY_TOKEN_BUDGET,
+        )
+        if st.session_state.get("agent_history_strategy") == AGENT_HISTORY_STRATEGY_SUMMARY:
+            st.caption("Older messages are compressed into a short system summary while recent turns stay verbatim.")
+        st.divider()
+        st.markdown("**LLM usage**")
         st.dataframe(
             rows_df,
             width="stretch",
