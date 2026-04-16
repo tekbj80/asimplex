@@ -11,6 +11,7 @@ import streamlit as st
 from asimplex.agent.tools import apply_parameter_patch, propose_parameter_patch
 from asimplex.llm_usage import record_llm_usage
 from asimplex.observability.app_log_store import log_event
+from asimplex.persistence.chat_history_store import append_exchange, list_messages_for_ui
 from asimplex.persistence.session_store import append_llm_usage_event, create_version
 from asimplex.streamlit_app.log_viewer_section import render_log_viewer_section
 from asimplex.streamlit_app.peak_shaving_table import render_peak_shaving_table
@@ -28,7 +29,13 @@ def render_chat_shell() -> None:
     st.title("Chat")
     st.caption("Agent can propose scoped simulation tuning with reasoning.")
     st.session_state.setdefault("agent_chat_history", [])
+    st.session_state.setdefault("agent_chat_history_project", "")
     st.session_state.setdefault("agent_pending_proposal", None)
+    active_project_name = str(st.session_state.get("project_name", "") or "").strip()
+    loaded_project_name = str(st.session_state.get("agent_chat_history_project", "") or "").strip()
+    if active_project_name != loaded_project_name:
+        st.session_state["agent_chat_history"] = list_messages_for_ui(active_project_name) if active_project_name else []
+        st.session_state["agent_chat_history_project"] = active_project_name
 
     history = st.session_state["agent_chat_history"]
     for msg in history:
@@ -87,6 +94,12 @@ def render_chat_shell() -> None:
                     assistant_text = "\n\n".join(response_parts) if response_parts else "No actionable proposal returned."
                     st.markdown(assistant_text)
                     history.append({"role": "assistant", "content": assistant_text})
+                    if active_project_name:
+                        append_exchange(
+                            project_name=active_project_name,
+                            user_message=user_message,
+                            assistant_message=assistant_text,
+                        )
 
                     if isinstance(proposed_params, dict) and proposed_params and next_step == "confirm":
                         st.session_state["agent_pending_proposal"] = {
@@ -102,6 +115,12 @@ def render_chat_shell() -> None:
                     err = f"Agent request failed: {exc}"
                     st.error(err)
                     history.append({"role": "assistant", "content": err})
+                    if active_project_name:
+                        append_exchange(
+                            project_name=active_project_name,
+                            user_message=user_message,
+                            assistant_message=err,
+                        )
                     log_event(
                         project_name=str(st.session_state.get("project_name", "") or ""),
                         source="chat_agent",

@@ -13,6 +13,7 @@ dependencies = [
     "bokeh",
     "folium",
     "langchain",
+    "langchain-community",
     "langchain-openai",
     "openai",
     "pandas",

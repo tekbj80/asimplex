@@ -10,6 +10,7 @@ from typing import Any
 from langchain.agents import create_agent
 from langchain.agents.structured_output import ToolStrategy
 from langchain.chat_models import init_chat_model
+from langchain_core.messages import HumanMessage
 from langchain.tools import tool
 
 from asimplex.agent.tools import (
@@ -19,6 +20,7 @@ from asimplex.agent.tools import (
     search_price_list,
 )
 from asimplex.llm_usage import sum_usage_from_langchain_messages
+from asimplex.persistence.chat_history_store import list_messages, trim_for_context
 
 SYSTEM_PROMPT = """
 You are an optimization copilot for a peak-shaving simulation.
@@ -101,6 +103,10 @@ def _extract_tool_invocations(messages: list[Any] | None) -> list[dict[str, Any]
 def run_tuning_agent(*, user_message: str, session_state: dict[str, Any]) -> dict[str, Any]:
     context_payloads = get_llm_simulation_context_payload(session_state)
     current_params = context_payloads.get("simulation_plan_params", {})
+    project_name = str(session_state.get("project_name", "") or "").strip()
+    max_history_messages = int(os.getenv("ASIMPLEX_AGENT_HISTORY_MAX_MESSAGES", "12"))
+    history_messages = list_messages(project_name) if project_name else []
+    context_messages = trim_for_context(history_messages, max_messages=max_history_messages)
 
     @tool
     def get_context_payloads() -> str:
@@ -135,7 +141,7 @@ def run_tuning_agent(*, user_message: str, session_state: dict[str, Any]) -> dic
         tools=tools,
         response_format=ToolStrategy(AgentResponse),
     )
-    result = agent.invoke({"messages": [{"role": "user", "content": user_message}]})
+    result = agent.invoke({"messages": [*context_messages, HumanMessage(content=user_message)]})
     messages = result.get("messages")
     usage_in, usage_out = sum_usage_from_langchain_messages(messages)
     tool_invocations = _extract_tool_invocations(messages if isinstance(messages, list) else None)
