@@ -22,6 +22,7 @@ env/
 # IDE and OS
 .idea/
 .vscode/
+.cursor/
 .DS_Store
 Thumbs.db
 
