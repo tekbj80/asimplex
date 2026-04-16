@@ -199,6 +199,7 @@ def render_chat_shell() -> None:
 
 def main() -> None:
     st.set_page_config(page_title="asimplex", page_icon=":speech_balloon:", layout="wide")
+    st.sidebar.image("c:/Users/el_Boon/reference/Portfolio/logo.png", width=100)
     init_session_state()
     st.sidebar.title("asimplex")
     st.sidebar.markdown(
