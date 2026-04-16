@@ -13,6 +13,10 @@ from asimplex.constants import HOUR_FRAC, TARIFF_THRESHOLD
 from asimplex.streamlit_app.profile_columns import ProfileColumn
 from simuplex.application_support_functions.peak_shaving import determine_battery_discharge
 
+ENERGY_COLOR = "#D4A017"  # soft gold
+PEAK_POWER_COLOR = "#5B8FD9"  # muted blue
+DURATION_COLOR = "#4C9085"  # muted teal
+
 
 def _to_float(value: float) -> float:
     return float(round(float(value), 2))
@@ -150,7 +154,7 @@ def render_peak_shaving_table() -> None:
                         y=discharge_df["energy"],
                         mode="markers",
                         name="energy (kWh)",
-                        marker={"color": "green", "size": 8, "symbol": "circle"},
+                        marker={"color": ENERGY_COLOR, "size": 8, "symbol": "circle"},
                         hovertemplate="time=%{x}<br>energy=%{y:.2f} kWh<extra></extra>",
                     ),
                     secondary_y=False,
@@ -161,7 +165,7 @@ def render_peak_shaving_table() -> None:
                         y=discharge_df["peak_power"],
                         mode="markers",
                         name="peak_power (kW)",
-                        marker={"color": "blue", "size": 8, "symbol": "square"},
+                        marker={"color": PEAK_POWER_COLOR, "size": 8, "symbol": "circle"},
                         hovertemplate="time=%{x}<br>peak_power=%{y:.2f} kW<extra></extra>",
                     ),
                     secondary_y=False,
@@ -172,7 +176,7 @@ def render_peak_shaving_table() -> None:
                         y=discharge_df["duration_hours"],
                         mode="markers",
                         name="duration (h)",
-                        marker={"color": "red", "size": 8, "symbol": "diamond"},
+                        marker={"color": DURATION_COLOR, "size": 8, "symbol": "circle"},
                         hovertemplate="time=%{x}<br>duration=%{y:.2f} h<extra></extra>",
                     ),
                     secondary_y=True,

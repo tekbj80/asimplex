@@ -57,6 +57,7 @@ def init_session_state() -> None:
     st.session_state.setdefault("agent_history_max_turns", ASIMPLEX_AGENT_HISTORY_MAX_TURNS)
     st.session_state.setdefault("agent_history_max_tokens", ASIMPLEX_AGENT_HISTORY_MAX_TOKENS)
     st.session_state.setdefault("simulation_plan_params", default_simulation_plan_params())
+    st.session_state.setdefault("base_case_benchmarks", None)
     st.session_state.setdefault("sim_version_note", "")
     st.session_state.setdefault("sim_version_selected", None)
     st.session_state.setdefault("sim_versions_cache", [])
