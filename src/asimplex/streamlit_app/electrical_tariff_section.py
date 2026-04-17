@@ -12,6 +12,10 @@ from openai import OpenAI
 from asimplex.llm_usage import record_llm_usage
 from asimplex.observability.app_log_store import log_event
 from asimplex.persistence.session_store import append_llm_usage_event, create_version, save_tariff_snapshot
+from asimplex.streamlit_app.rate_limit import (
+    check_tariff_cooldown_remaining,
+    mark_tariff_extraction_attempt,
+)
 from asimplex.streamlit_app.simulation_plan_section import (
     apply_extracted_tariff_to_simulation_plan_params,
 )
@@ -192,7 +196,18 @@ def render_electrical_tariff_section() -> None:
             type=["pdf"],
             accept_multiple_files=False,
             key="tariff_pdf_upload",
+            help="You may not upload a new tariff for the next minute to keep cost manageable.",
         )
+        cooldown_seconds = int(st.session_state.get("tariff_cooldown_seconds", 60) or 0)
+        cooldown_remaining = check_tariff_cooldown_remaining(
+            st.session_state,
+            cooldown_seconds=cooldown_seconds,
+        )
+        if cooldown_remaining > 0:
+            st.info(
+                "You may not upload a new tariff for the next minute to keep cost manageable. "
+                f"Please wait {cooldown_remaining}s."
+            )
         extracted_tariff = tariff_state.get("llm_extracted_tariff")
         llm_response_debug_text = str(tariff_state.get("llm_response_debug_text", ""))
         source_filename = str(tariff_state.get("source_filename", "") or "")
@@ -204,11 +219,29 @@ def render_electrical_tariff_section() -> None:
                 "Tariff values were loaded from the last saved session state. "
                 "These may not match the currently uploaded file, this could be due to manual edits."
             )
-        if st.button("Extract tariff from PDF", key="tariff_extract_button", type="secondary"):
-            if uploaded_tariff_pdf is None:
+        if st.button(
+            "Extract tariff from PDF",
+            key="tariff_extract_button",
+            type="secondary",
+        ):
+            if cooldown_remaining > 0:
+                st.warning(
+                    "You may not upload a new tariff for the next minute to keep cost manageable. "
+                    f"Please wait {cooldown_remaining}s."
+                )
+                log_event(
+                    project_name=str(st.session_state.get("project_name", "") or ""),
+                    source="tariff_extraction",
+                    event_type="rate_limit",
+                    status="blocked",
+                    message="Tariff extraction blocked by cooldown.",
+                    payload={"cooldown_remaining_seconds": cooldown_remaining},
+                )
+            elif uploaded_tariff_pdf is None:
                 st.error("Please upload a PDF first.")
             else:
                 try:
+                    mark_tariff_extraction_attempt(st.session_state)
                     with st.spinner("Uploading PDF and extracting tariff values..."):
                         extracted_tariff, llm_response_debug_text, usage = _extract_tariff_with_llm(
                             pdf_bytes=uploaded_tariff_pdf.getvalue(),
