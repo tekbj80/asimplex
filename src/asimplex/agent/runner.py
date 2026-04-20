@@ -27,6 +27,7 @@ from asimplex.agent.tools import (
 )
 from asimplex.llm_usage import sum_usage_from_langchain_messages
 from asimplex.persistence.chat_history_store import list_messages, trim_for_context
+from asimplex.rag.retriever import retrieve_rag_context
 
 SYSTEM_PROMPT = """
 You are an optimization copilot for a peak-shaving simulation.
@@ -108,6 +109,11 @@ def _extract_tool_invocations(messages: list[Any] | None) -> list[dict[str, Any]
 
 def run_tuning_agent(*, user_message: str, session_state: dict[str, Any]) -> dict[str, Any]:
     context_payloads = get_llm_simulation_context_payload(session_state)
+    try:
+        rag_hits = retrieve_rag_context(user_message)
+    except Exception:
+        rag_hits = []
+    context_payloads["rag_context_hits"] = rag_hits
     current_params = context_payloads.get("simulation_plan_params", {})
     project_name = str(session_state.get("project_name", "") or "").strip()
     history_strategy = str(session_state.get("agent_history_strategy", ASIMPLEX_AGENT_HISTORY_STRATEGY))

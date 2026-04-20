@@ -31,3 +31,4 @@ Thumbs.db
 .asimplex_sessions.db-*
 .asimplex_app_logs.db
 .asimplex_app_logs.db-*
+.asimplex_rag_chroma/

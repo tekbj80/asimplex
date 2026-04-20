@@ -23,3 +23,13 @@ pytest
 streamlit run src/asimplex/streamlit_app/main.py
 ```
 
+## Build local RAG index
+
+Place domain documents in `knowledge_base/raw` (supported: `.pdf`, `.csv`, `.txt`, `.md`), then run:
+
+```bash
+python -m asimplex.rag.build_index
+```
+
+The index is persisted in `.asimplex_rag_chroma` and is used to enrich agent context during chat turns.
+

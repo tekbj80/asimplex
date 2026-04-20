@@ -19,7 +19,7 @@ dependencies = [
     "pandas",
     "plotly",
     "requests",
-    "simuplex @ file:///C:/Users/el_Boon/code/simuplex",
+    # "simuplex @ file:///C:/Users/el_Boon/code/simuplex",
     "streamlit",
     "streamlit-folium",
 ]
