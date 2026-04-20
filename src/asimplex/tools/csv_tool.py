@@ -58,16 +58,18 @@ def csv_reader_format(
     decimal_options = [",", "."]
     thousands_options = [None, ",", ".", "_"]
     header_options = [0, None]
-    col_options = [0, 1]
+    col_options = [-1]
+    skiprows_options = [0, 1, 2]
 
     parse_errors: list[str] = []
 
-    for sep_opt, decimal_opt, thousands_opt, header_opt, col_opt in product(
+    for sep_opt, decimal_opt, thousands_opt, header_opt, col_opt, skiprows_opt in product(
         sep_options,
         decimal_options,
         thousands_options,
         header_options,
         col_options,
+        skiprows_options,
     ):
         try:
             csv_bytes.seek(0)
@@ -77,7 +79,8 @@ def csv_reader_format(
                 decimal=decimal_opt,
                 thousands=thousands_opt,
                 header=header_opt,
-            )
+                skiprows=skiprows_opt
+            )   
             series = df.iloc[:, col_opt]
         except Exception as exc:  # pragma: no cover - defensive parse fallback
             parse_errors.append(

@@ -38,7 +38,7 @@ profile_color: dict[ProfileColumn, str] = {
 description: dict[ProfileColumn, str] = {
     ProfileColumn.SITE_LOAD: "Daily load consumption.",
     ProfileColumn.PV_PRODUCTION: "Daily PV production.",
-    ProfileColumn.PV_SURPLUS: "Excess PV production to be exported to the grid or charged to battery.",
-    ProfileColumn.GRID_IMPORT: "Net grid energy consumption after accounting for PV production.",
+    ProfileColumn.PV_SURPLUS: "Excess PV production to be exported to the grid or charged to battery, that can be shifted to the load.",
+    ProfileColumn.GRID_IMPORT: "Net grid energy consumption after accounting for PV production. The positive value indicates load still to be met, either by the grid or battery (from the PV).",
 }
 

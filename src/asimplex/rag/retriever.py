@@ -7,13 +7,7 @@ from typing import Any
 from langchain_community.vectorstores import Chroma
 from langchain_openai import OpenAIEmbeddings
 
-from asimplex.rag.config import (
-    RAG_CHROMA_DIR,
-    RAG_COLLECTION_CONCEPTS,
-    RAG_COLLECTION_NAME,
-    RAG_COLLECTION_OPERATIONAL,
-    RAG_TOP_K,
-)
+from asimplex.rag.config import RAG_CHROMA_DIR, RAG_COLLECTION_NAME, RAG_TOP_K
 
 
 def _query_variants(query: str) -> list[str]:
@@ -35,31 +29,9 @@ def _query_variants(query: str) -> list[str]:
 
 
 def _route_collection_names(user_query: str) -> list[str]:
-    query = str(user_query or "").lower()
-    concept_keywords = {
-        "evo", "peak", "peak shaving", "strategy", "explain", "concept", "theory", "clarify",
-        "tell", ""
-        }
-    operational_keywords = {
-        "tariff",
-        "price",
-        "cost",
-        "eur",
-        "simulation",
-        "grid limit",
-        "threshold",
-        "parameter",
-        "battery",
-    }
-    concepts_match = any(k in query for k in concept_keywords)
-    operational_match = any(k in query for k in operational_keywords)
-
-    if concepts_match and not operational_match:
-        return [RAG_COLLECTION_CONCEPTS]
-    if operational_match and not concepts_match:
-        return [RAG_COLLECTION_OPERATIONAL]
-    # ambiguous or mixed query -> search both curated collections first
-    return [RAG_COLLECTION_CONCEPTS, RAG_COLLECTION_OPERATIONAL, RAG_COLLECTION_NAME]
+    _ = user_query
+    # Single-collection mode: always search the configured default collection.
+    return [RAG_COLLECTION_NAME]
 
 
 def retrieve_rag_context(user_query: str, *, top_k: int = RAG_TOP_K) -> list[dict[str, Any]]:

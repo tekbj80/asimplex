@@ -13,7 +13,7 @@ RAG_RAW_DOCS_DIR = Path(
 RAG_CHROMA_DIR = Path(
     os.getenv("ASIMPLEX_RAG_CHROMA_DIR", str(PROJECT_ROOT / ".asimplex_rag_chroma"))
 ).resolve()
-RAG_COLLECTION_NAME = os.getenv("ASIMPLEX_RAG_COLLECTION_NAME", "asimplex_domain_docs")
+RAG_COLLECTION_NAME = os.getenv("ASIMPLEX_RAG_COLLECTION_NAME", "strategy")
 RAG_COLLECTION_CONCEPTS = os.getenv("ASIMPLEX_RAG_COLLECTION_CONCEPTS", "asimplex_concepts")
 RAG_COLLECTION_OPERATIONAL = os.getenv("ASIMPLEX_RAG_COLLECTION_OPERATIONAL", "asimplex_operational")
 

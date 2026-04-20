@@ -53,6 +53,13 @@ Then call tool `draft_parameter_patch` with your candidate params so validation
 and battery lookup are checked.
 If draft_parameter_patch returns issues, revise proposed_params and retry.
 Only set next_step="confirm" when issues is empty and patch is non-empty.
+When documentation evidence is needed or unclear, call `search_strategy_docs`
+with a refined query and ground your explanation in those retrieved sources.
+
+Terminology: 
+- EVO (Eigenverbrauchoptimierung) and SCO (Self-Consumption Optimization) are the same thing: to shift PV power using battert to supply the load.
+- PLS (Peak Load Shaving), Peak Shaving, Lastspitzenkappung (LSK) are the same thing, that means to reduce the peak load.
+
 """.strip()
 
 
@@ -153,9 +160,21 @@ def run_tuning_agent(*, user_message: str, session_state: dict[str, Any]) -> dic
         result_obj = propose_parameter_patch(current_params if isinstance(current_params, dict) else {}, proposed_obj)
         return json.dumps(result_obj, indent=2)
 
+    @tool
+    def search_strategy_docs(query: str) -> str:
+        """Retrieve relevant chunks from the strategy RAG collection for explanation grounding."""
+        hits = retrieve_rag_context(query)
+        return json.dumps(hits, indent=2)
+
     model_name = os.getenv("ASIMPLEX_AGENT_MODEL", "gpt-4.1-mini")
     llm = init_chat_model(model_name, temperature=0)
-    tools = [get_context_payloads, lookup_price_list, get_proposal_json_format, draft_parameter_patch]
+    tools = [
+        get_context_payloads,
+        lookup_price_list,
+        get_proposal_json_format,
+        draft_parameter_patch,
+        search_strategy_docs,
+    ]
     agent = create_agent(
         model=llm,
         system_prompt=SYSTEM_PROMPT,
@@ -223,6 +242,7 @@ def run_tuning_agent(*, user_message: str, session_state: dict[str, Any]) -> dic
     if patch_nonempty and issues_empty:
         parsed["next_step"] = "confirm"
 
+    parsed["rag_context_hits"] = rag_hits if isinstance(rag_hits, list) else []
     parsed["usage"] = {"input_tokens": usage_in, "output_tokens": usage_out}
     parsed["tool_invocations"] = tool_invocations
     return parsed
