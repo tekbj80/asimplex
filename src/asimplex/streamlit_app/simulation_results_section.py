@@ -175,10 +175,25 @@ def _run_base_case_simulation(params: dict) -> tuple[bool, str]:
         return False, f"Base case failed: {exc}"
 
 
+def render_base_case_section() -> None:
+    params = st.session_state.get("simulation_plan_params", {})
+    base_case_enabled = _base_case_ready()
+    if st.button("Run base case", key="sim_base_case_run_button", disabled=not base_case_enabled):
+        st.info("Running base case simulator... tqdm progress is shown in terminal output.")
+        with st.spinner("Base case running..."):
+            ok, msg = _run_base_case_simulation(params if isinstance(params, dict) else {})
+        if ok:
+            st.success(msg)
+            st.rerun()
+        else:
+            st.error(msg)
+    if not base_case_enabled:
+        st.caption("Base case requires loaded load/PV profiles and extracted tariff values.")
+
+
 def render_simulation_results_section() -> None:
     with st.expander("Simulation Run & Results", expanded=False):
         params = st.session_state.get("simulation_plan_params", {})
-        base_case_enabled = _base_case_ready()
         base_case_benchmarks = st.session_state.get("base_case_benchmarks")
         proposal_benchmarks = st.session_state.get("simulation_plan_benchmarks")
         proposal_enabled = _has_meaningful_benchmarks(base_case_benchmarks)
@@ -186,17 +201,7 @@ def render_simulation_results_section() -> None:
             base_case_benchmarks,
             proposal_benchmarks,
         )
-        c1, c2 = st.columns(2)
-        if c1.button("Run base case", key="sim_base_case_run_button", disabled=not base_case_enabled):
-            st.info("Running base case simulator... tqdm progress is shown in terminal output.")
-            with st.spinner("Base case running..."):
-                ok, msg = _run_base_case_simulation(params if isinstance(params, dict) else {})
-            if ok:
-                st.success(msg)
-                st.rerun()
-            else:
-                st.error(msg)
-        if c2.button("Run simulation", type="primary", key="sim_plan_run_button", disabled=not proposal_enabled):
+        if st.button("Run simulation", type="primary", key="sim_plan_run_button", disabled=not proposal_enabled):
             st.info("Running proposal simulator... tqdm progress is shown in terminal output.")
             with st.spinner("Simulation running..."):
                 ok, msg = run_simulation_plan_with_params(params if isinstance(params, dict) else {})
@@ -204,9 +209,7 @@ def render_simulation_results_section() -> None:
                 st.success(msg)
             else:
                 st.error(msg)
-        if not base_case_enabled:
-            st.caption("Base case requires loaded load/PV profiles and extracted tariff values.")
-        elif not proposal_enabled:
+        if not proposal_enabled:
             st.caption("Please run the base case simulation first, then the proposal simulation can be done.")
 
         if (

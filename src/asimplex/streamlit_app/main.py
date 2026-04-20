@@ -15,8 +15,10 @@ from asimplex.observability.app_log_store import log_event
 from asimplex.persistence.chat_history_store import append_exchange, list_messages_for_ui
 from asimplex.persistence.session_store import append_llm_usage_event, create_version
 from asimplex.streamlit_app.log_viewer_section import render_log_viewer_section
+from asimplex.streamlit_app.load_profile_section import render_load_profile_section
 from asimplex.streamlit_app.peak_shaving_table import render_peak_shaving_table
 from asimplex.streamlit_app.power_profiles_plot import render_power_profiles_plot
+from asimplex.streamlit_app.pv_profile_section import render_pv_profile_section
 from asimplex.streamlit_app.rate_limit import check_llm_usage_window_limit
 from asimplex.streamlit_app.session_state import init_session_state
 from asimplex.streamlit_app.sidebar import render_sidebar
@@ -24,7 +26,10 @@ from asimplex.streamlit_app.simulation_plan_section import (
     render_simulation_plan_section,
     run_simulation_plan_with_params,
 )
-from asimplex.streamlit_app.simulation_results_section import render_simulation_results_section
+from asimplex.streamlit_app.simulation_results_section import (
+    render_base_case_section,
+    render_simulation_results_section,
+)
 
 
 def _format_rag_sources_markdown(rag_hits: list[dict[str, object]]) -> str:
@@ -277,10 +282,14 @@ def main() -> None:
     unsafe_allow_html=True,
 )
     render_sidebar()
-    workspace_tab, chat_tab, logs_tab = st.tabs(["Workspace", "Chat", "Logs"])
-    with workspace_tab:
+    profiles_tab, simulations_tab, chat_tab, logs_tab = st.tabs(["Profiles", "Simulations", "Chat", "Logs"])
+    with profiles_tab:
+        render_load_profile_section()
+        render_pv_profile_section()
+        render_base_case_section()
         render_power_profiles_plot()
         render_peak_shaving_table()
+    with simulations_tab:
         render_simulation_plan_section()
         render_simulation_results_section()
     with chat_tab:

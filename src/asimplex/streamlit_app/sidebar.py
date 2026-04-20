@@ -20,9 +20,8 @@ from asimplex.streamlit_app.electrical_tariff_section import (
     VOLTAGE_LEVEL_OPTIONS,
     render_electrical_tariff_section,
 )
-from asimplex.streamlit_app.load_profile_section import apply_profile_to_power_profiles, render_load_profile_section
+from asimplex.streamlit_app.load_profile_section import apply_profile_to_power_profiles
 from asimplex.streamlit_app.profile_columns import ProfileColumn
-from asimplex.streamlit_app.pv_profile_section import render_pv_profile_section
 from asimplex.streamlit_app.sidebar_llm_dashboard import render_token_usage_table
 from asimplex.streamlit_app.simulation_plan_section import update_simulation_plan_params
 from asimplex.tools.csv_tool import BASE_INDEX_15MIN
@@ -177,7 +176,5 @@ def render_project_session_selector() -> None:
 def render_sidebar() -> None:
     render_project_session_selector()
     st.sidebar.divider()
-    render_load_profile_section()
-    render_pv_profile_section()
     render_electrical_tariff_section()
     render_token_usage_table()

@@ -81,7 +81,7 @@ def _build_description_from_series(series: pd.Series) -> dict[str, float]:
 
 
 def render_pv_profile_section() -> None:
-    with st.sidebar.expander("PV Power Profile", expanded=False):
+    with st.expander("PV Power Profile", expanded=False):
         st.checkbox("Is there an existing PV system?", key="pv_system_already_exists")
         refresh_power_profiles_metrics()
 

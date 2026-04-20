@@ -112,7 +112,7 @@ def render_description_table(description: object, parse_attempts: list[str] | No
 
 
 def render_load_profile_section() -> None:
-    with st.sidebar.expander("Load profile", expanded=True):
+    with st.expander("Load profile", expanded=True):
         uploaded_file = st.file_uploader(
             "Upload CSV file",
             type=["csv"],
