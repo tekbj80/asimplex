@@ -277,15 +277,7 @@ def render_peak_shaving_table() -> None:
         capacity_df = st.session_state.get("peak_shaving_capacity_table")
         if not isinstance(capacity_df, pd.DataFrame):
             capacity_df = recompute_peak_shaving_capacity_table()
-        if isinstance(capacity_df, pd.DataFrame) and not capacity_df.empty:
-            st.markdown("**Capacity needed for peak shaving (filtered by largest available batteries)**")
-            st.dataframe(capacity_df.round(3), width="stretch", hide_index=True)
         st.session_state["peak_shaving_capacity_summary_json"] = _build_peak_shaving_capacity_summary(capacity_df)
-        with st.expander("Peak shaving capacity summary JSON (for LLM)", expanded=False):
-            st.code(
-                json.dumps(st.session_state.get("peak_shaving_capacity_summary_json", {}), indent=2),
-                language="json",
-            )
 
         load_peak = float(profiles[ProfileColumn.SITE_LOAD.column_name].max())
         if load_peak <= 0:
@@ -378,9 +370,26 @@ def render_peak_shaving_table() -> None:
                     ),
                 )
                 st.session_state["peak_shaving_json"] = summary_json
+                if isinstance(capacity_df, pd.DataFrame) and not capacity_df.empty:
+                    with st.expander("Capacity needed for peak shaving (filtered by largest available batteries)", expanded=False):
+                        st.dataframe(
+                            capacity_df.round(3),
+                            width="stretch",
+                            hide_index=True,
+                            height=150,
+                        )
+                        st.markdown(
+                            "This table shows the battery capacity and power needed to maintain required "
+                            "grid limit (Grid power draw)."
+                        )
                 with st.expander("Peak shaving JSON (Summarized Data to LLM)", expanded=False):
                     st.markdown("**Peak shaving JSON output**")
                     st.code(json.dumps(summary_json, indent=2), language="json")
+                with st.expander("Peak shaving capacity summary JSON (for LLM)", expanded=False):
+                    st.code(
+                        json.dumps(st.session_state.get("peak_shaving_capacity_summary_json", {}), indent=2),
+                        language="json",
+                    )
             else:
                 st.info("No discharge events found for the current power limit.")
         except Exception as exc:

@@ -60,9 +60,10 @@ Battery sizing and grid-limit selection workflow (follow this order):
    - Start from `anchor_candidates` where feasibility is true.
    - Pick a candidate grid_limit that reduces demand peaks while staying close to feasible battery sizes.
 3. Convert steps (1) and (2) into explicit battery targets:
-   - `target_capacity_kwh` = max(EVO anchor, peak-shaving required capacity at chosen grid_limit)
-   - `target_power_kw` = peak-shaving required power at chosen grid_limit
-4. Call `lookup_price_list_near_target(target_capacity_kwh, target_power_kw)`.
+   - `target_capacity_kwh` = EVO anchor + peak-shaving required capacity at chosen grid_limit
+     (treat EVO and peak-shaving as stacked use-cases, not alternatives)
+   - `target_power_kw` = max(EVO anchor, peak-shaving required power at chosen grid_limit) * 1.2
+   4. Call `lookup_price_list_near_target(target_capacity_kwh, target_power_kw)`.
    - Compare multiple nearest candidates, not just the first hit.
    - Prefer candidates that meet BOTH capacity and power with minimal oversizing.
 5. If no reasonable candidate is returned, then (and only then) use `lookup_price_list` fallback.
