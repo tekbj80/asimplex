@@ -359,10 +359,6 @@ def render_simulation_results_section() -> None:
                     except Exception as exc:
                         st.error(f"Failed to generate export file: {exc}")
             generated_html = st.session_state.get("simulation_plot_generated_html")
-            import pickle
-            with open('test.bin', 'wb') as f:
-                pickle.dump(st.session_state.get('simulation_plan_simulator'), f)
-                
             if isinstance(generated_html, str) and generated_html.strip():
                 st.download_button(
                     "Download HTML",
