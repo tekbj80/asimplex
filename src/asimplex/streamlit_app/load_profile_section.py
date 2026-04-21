@@ -9,6 +9,7 @@ import streamlit as st
 
 from asimplex.observability.app_log_store import log_event
 from asimplex.persistence.session_store import get_profile_snapshot, save_profile_snapshot
+from asimplex.streamlit_app.peak_shaving_table import recompute_peak_shaving_capacity_table
 from asimplex.streamlit_app.profile_columns import ProfileColumn
 from asimplex.tools.calculations import calculate_full_hour_equivalent
 from asimplex.tools.formatting import format_metric_name, format_metric_value
@@ -137,6 +138,7 @@ def render_load_profile_section() -> None:
                     apply_profile_to_power_profiles(
                         ProfileColumn.SITE_LOAD.column_name, result.get("time_series_list", [])
                     )
+                    recompute_peak_shaving_capacity_table()
                     project_name = str(st.session_state.get("project_name", "") or "")
                     if project_name:
                         overwritten = save_profile_snapshot(

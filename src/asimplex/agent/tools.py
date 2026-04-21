@@ -27,7 +27,7 @@ def load_price_list_records(limit: int = 200) -> list[dict[str, Any]]:
     return df.to_dict(orient="records")
 
 
-def search_price_list(query: str, *, limit: int = 10) -> list[dict[str, Any]]:
+def search_price_list(query: str, *, limit: int = 100) -> list[dict[str, Any]]:
     df = load_price_list_df()
     q = (query or "").strip()
     if not q:
@@ -43,10 +43,37 @@ def search_price_list(query: str, *, limit: int = 10) -> list[dict[str, Any]]:
     return df.head(limit).to_dict(orient="records")
 
 
+def search_price_list_near_target(
+    *,
+    target_capacity_kwh: float,
+    target_power_kw: float,
+    limit: int = 10,
+) -> list[dict[str, Any]]:
+    """Return nearest battery candidates to target capacity/power."""
+    df = load_price_list_df().copy()
+    if df.empty:
+        return []
+
+    try:
+        target_capacity = max(float(target_capacity_kwh), 1e-6)
+        target_power = max(float(target_power_kw), 1e-6)
+    except (TypeError, ValueError):
+        return df.head(limit).to_dict(orient="records")
+
+    cap_rel = (df["capacity"] - target_capacity).abs() / target_capacity
+    power_rel = (df["power"] - target_power).abs() / target_power
+    # Slightly favor capacity matching because storage sizing is primary.
+    df["distance_score"] = (0.6 * cap_rel) + (0.4 * power_rel)
+
+    nearest = df.sort_values(by=["distance_score", "price", "productId"], ascending=[True, True, True]).head(limit)
+    return nearest.to_dict(orient="records")
+
+
 def get_llm_simulation_context_payload(session_state: dict[str, Any]) -> dict[str, Any]:
     return {
         "profile_summary_json": session_state.get("profile_summary_json") or {},
         "peak_shaving_json": session_state.get("peak_shaving_json") or {},
+        "peak_shaving_capacity_summary_json": session_state.get("peak_shaving_capacity_summary_json") or {},
         "simulation_plan_params": session_state.get("simulation_plan_params") or {},
         "simulation_benchmark_context_json": session_state.get("simulation_benchmark_context_json") or {},
     }

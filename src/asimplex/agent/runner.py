@@ -24,6 +24,7 @@ from asimplex.agent.tools import (
     get_proposal_json_format as get_proposal_json_format_contract,
     propose_parameter_patch,
     search_price_list,
+    search_price_list_near_target,
 )
 from asimplex.llm_usage import sum_usage_from_langchain_messages
 from asimplex.persistence.chat_history_store import list_messages, trim_for_context
@@ -46,6 +47,17 @@ You must NOT propose changes to:
 Always include concise reasoning and mention EVO logic:
 - evo_threshold is SOC p.u. above which EVO is activated.
 - lsk_charge_from_grid influences charging toward evo_threshold.
+
+
+In order to select the right battery, you should consider the following:
+
+1. Estimate EVO capacity needs from profile_summary_json PV surplus and usage quantiles; avoid choosing a battery that would be underutilized across the year. 
+2. Choose grid_limit from peak_shaving_capacity_summary_json.anchor_candidates and peak_shaving_json; prioritize feasible candidates and consider tariff demand charges when balancing cost vs battery size
+3. Do not invent battery size requirements. First estimate target capacity/power and call
+   `lookup_price_list_near_target` to get nearest candidates. Use `lookup_price_list`
+   only as a fallback text search.
+
+Reference the selected candidate/tradeoff in your reasoning when applicable.
 
 Before drafting proposed_params, you MUST call tool `get_proposal_json_format`.
 Use that returned contract as the source of truth for shape and constraints.
@@ -143,8 +155,24 @@ def run_tuning_agent(*, user_message: str, session_state: dict[str, Any]) -> dic
 
     @tool
     def lookup_price_list(query: str) -> str:
-        """Search non_code_resources/price_list.csv by product name, inverter, or product ID."""
+        """Search non_code_resources/price_list.csv by product name, inverter, or product ID.
+
+        NOTE: Slated for removal in favor of `lookup_price_list_near_target`.
+        Kept temporarily for fallback/manual lookup scenarios.
+        """
         return json.dumps(search_price_list(query, limit=12), indent=2)
+
+    @tool
+    def lookup_price_list_near_target(target_capacity_kwh: float, target_power_kw: float) -> str:
+        """Return battery candidates nearest to target capacity/power."""
+        return json.dumps(
+            search_price_list_near_target(
+                target_capacity_kwh=target_capacity_kwh,
+                target_power_kw=target_power_kw,
+                limit=10,
+            ),
+            indent=2,
+        )
 
     @tool
     def get_proposal_json_format() -> str:
@@ -171,6 +199,7 @@ def run_tuning_agent(*, user_message: str, session_state: dict[str, Any]) -> dic
     tools = [
         get_context_payloads,
         lookup_price_list,
+        lookup_price_list_near_target,
         get_proposal_json_format,
         draft_parameter_patch,
         search_strategy_docs,

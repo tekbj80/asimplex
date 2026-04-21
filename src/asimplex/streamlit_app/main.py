@@ -8,7 +8,7 @@ from datetime import datetime
 
 import streamlit as st
 
-from asimplex.agent.tools import apply_parameter_patch, propose_parameter_patch
+from asimplex.agent.tools import apply_parameter_patch, load_price_list_df, propose_parameter_patch
 from asimplex.constants import CHAT_AGENT_STR_FOR_DISPLAY, CHAT_AGENT_STR_FOR_LOGGING
 from asimplex.llm_usage import record_llm_usage
 from asimplex.observability.app_log_store import log_event
@@ -30,6 +30,36 @@ from asimplex.streamlit_app.simulation_results_section import (
     render_base_case_section,
     render_simulation_results_section,
 )
+
+
+def _init_battery_extremes_from_price_list() -> None:
+    if (
+        "battery_with_biggest_capacity" in st.session_state
+        and "battery_with_biggest_power" in st.session_state
+    ):
+        return
+    try:
+        price_df = load_price_list_df()
+    except Exception:
+        st.session_state.setdefault("battery_with_biggest_capacity", {"capacity": 0.0, "battery": {}})
+        st.session_state.setdefault("battery_with_biggest_power", {"capacity": 0.0, "battery": {}})
+        return
+    if price_df.empty:
+        st.session_state.setdefault("battery_with_biggest_capacity", {"capacity": 0.0, "battery": {}})
+        st.session_state.setdefault("battery_with_biggest_power", {"capacity": 0.0, "battery": {}})
+        return
+    cap_row = price_df.loc[price_df["capacity"].idxmax()]
+    power_row = price_df.loc[price_df["power"].idxmax()]
+    cap_row_dict = {k: (v.item() if hasattr(v, "item") else v) for k, v in cap_row.to_dict().items()}
+    power_row_dict = {k: (v.item() if hasattr(v, "item") else v) for k, v in power_row.to_dict().items()}
+    st.session_state["battery_with_biggest_capacity"] = {
+        "capacity": float(cap_row_dict.get("capacity", 0.0) or 0.0),
+        "battery": cap_row_dict,
+    }
+    st.session_state["battery_with_biggest_power"] = {
+        "capacity": float(power_row_dict.get("capacity", 0.0) or 0.0),
+        "battery": power_row_dict,
+    }
 
 
 def _format_rag_sources_markdown(rag_hits: list[dict[str, object]]) -> str:
@@ -54,8 +84,7 @@ def _render_rag_sources(rag_hits: list[dict[str, object]]) -> None:
 
 
 def render_chat_shell() -> None:
-    st.title("Chat")
-    st.caption("Agent can propose scoped simulation tuning with reasoning.")
+    st.caption("Chat: The agent can propose scoped simulation tuning with reasoning.")
     st.session_state.setdefault("agent_chat_history", [])
     st.session_state.setdefault("agent_chat_history_project", "")
     st.session_state.setdefault("agent_pending_proposal", None)
@@ -66,84 +95,93 @@ def render_chat_shell() -> None:
         st.session_state["agent_chat_history_project"] = active_project_name
 
     history = st.session_state["agent_chat_history"]
-    for msg in history:
-        with st.chat_message(msg.get("role", "assistant")):
-            st.markdown(msg.get("content", ""))
+    with st.container(height=520):
+        for msg in history:
+            with st.chat_message(msg.get("role", "assistant")):
+                st.markdown(msg.get("content", ""))
 
-    pending = st.session_state.get("agent_pending_proposal")
-    if isinstance(pending, dict):
-        proposed_params = pending.get("proposed_params", {})
-        current_params = st.session_state.get("simulation_plan_params", {})
-        patch = pending.get("patch", {})
-        issues = pending.get("issues", [])
-        selected_battery = pending.get("selected_battery")
-        pending_rag_hits_raw = pending.get("rag_context_hits")
-        pending_rag_hits = pending_rag_hits_raw if isinstance(pending_rag_hits_raw, list) else []
-        if not isinstance(patch, dict) or not isinstance(issues, list):
-            patch_result = propose_parameter_patch(current_params, proposed_params if isinstance(proposed_params, dict) else {})
-            patch = patch_result.get("patch", {})
-            issues = patch_result.get("issues", [])
-            selected_battery = patch_result.get("selected_battery")
+        pending = st.session_state.get("agent_pending_proposal")
+        if isinstance(pending, dict):
+            proposed_params = pending.get("proposed_params", {})
+            current_params = st.session_state.get("simulation_plan_params", {})
+            patch = pending.get("patch", {})
+            issues = pending.get("issues", [])
+            selected_battery = pending.get("selected_battery")
+            pending_rag_hits_raw = pending.get("rag_context_hits")
+            pending_rag_hits = pending_rag_hits_raw if isinstance(pending_rag_hits_raw, list) else []
+            if not isinstance(patch, dict) or not isinstance(issues, list):
+                patch_result = propose_parameter_patch(current_params, proposed_params if isinstance(proposed_params, dict) else {})
+                patch = patch_result.get("patch", {})
+                issues = patch_result.get("issues", [])
+                selected_battery = patch_result.get("selected_battery")
 
-        with st.container(border=True):
-            st.markdown("**Pending parameter proposal**")
-            reasoning = str(pending.get("reasoning", "")).strip()
-            if reasoning:
-                st.markdown(reasoning)
-            if selected_battery:
-                st.markdown("Selected battery from price list:")
-                st.code(json.dumps(selected_battery, indent=2), language="json")
-            _render_rag_sources([hit for hit in pending_rag_hits if isinstance(hit, dict)])
+            with st.container(border=True):
+                st.markdown("**Pending changes to simulation parameters**")
+                reasoning = str(pending.get("reasoning", "")).strip()
+                if reasoning:
+                    st.markdown(reasoning)
+                if selected_battery:
+                    st.markdown("Selected battery from price list:")
+                    st.code(json.dumps(selected_battery, indent=2), language="json")
+                _render_rag_sources([hit for hit in pending_rag_hits if isinstance(hit, dict)])
 
-            if issues:
-                st.error("Proposal contains disallowed or invalid updates.")
-                st.caption(
-                    "Expected nested payload under `application` and/or "
-                    "`battery_selection`; dotted keys are invalid."
-                )
-                st.code(json.dumps({"issues": issues}, indent=2), language="json")
-            else:
-                st.markdown("Patch to apply:")
-                st.code(json.dumps(patch, indent=2), language="json")
-
-            c1, c2 = st.columns(2)
-            if c1.button("Confirm apply + run", key="agent_confirm_apply_run", type="primary", disabled=bool(issues)):
-                updated_params = apply_parameter_patch(current_params, patch)
-                st.session_state["simulation_plan_params"] = updated_params
-                project_name = str(st.session_state.get("project_name", "") or "")
-                if project_name:
-                    patch_keys = sorted(list((patch or {}).keys())) if isinstance(patch, dict) else []
-                    create_version(
-                        project_name=project_name,
-                        source="agent_setting",
-                        note=f"Agent confirmed update ({datetime.now().strftime('%Y-%m-%d %H:%M:%S')}): {', '.join(patch_keys)}",
-                        params=updated_params if isinstance(updated_params, dict) else {},
-                        patch=patch if isinstance(patch, dict) else {},
+                if issues:
+                    st.error("Proposal contains disallowed or invalid updates.")
+                    st.caption(
+                        "Expected nested payload under `application` and/or "
+                        "`battery_selection`; dotted keys are invalid."
                     )
-                log_event(
-                    project_name=project_name,
-                    source=CHAT_AGENT_STR_FOR_LOGGING,
-                    event_type="agent_apply_patch",
-                    status="success",
-                    message="Confirmed agent proposal and applied parameter patch.",
-                    payload={"patch_keys": sorted(list(patch.keys())) if isinstance(patch, dict) else []},
-                )
-                with st.spinner("Applying changes and running simulation..."):
-                    ok, msg = run_simulation_plan_with_params(updated_params)
-                sources_markdown = _format_rag_sources_markdown(
-                    [hit for hit in pending_rag_hits if isinstance(hit, dict)][:3]
-                )
-                confirm_response_parts = [msg]
-                if sources_markdown:
-                    confirm_response_parts.append(sources_markdown)
-                history.append({"role": "assistant", "content": "\n\n".join(confirm_response_parts)})
-                st.session_state["agent_pending_proposal"] = None
-                st.rerun()
+                    st.code(json.dumps({"issues": issues}, indent=2), language="json")
+                else:
+                    st.markdown("Patch to apply:")
+                    st.code(json.dumps(patch, indent=2), language="json")
 
-            if c2.button("Reject proposal", key="agent_reject_proposal"):
-                history.append({"role": "assistant", "content": "Proposal rejected. No parameters were changed."})
-                st.session_state["agent_pending_proposal"] = None
-                st.rerun()
+                c1, c2 = st.columns(2)
+                if c1.button("Confirm apply + run", key="agent_confirm_apply_run", type="primary", disabled=bool(issues)):
+                    updated_params = apply_parameter_patch(current_params, patch)
+                    st.session_state["simulation_plan_params"] = updated_params
+                    project_name = str(st.session_state.get("project_name", "") or "")
+                    if project_name:
+                        patch_keys = sorted(list((patch or {}).keys())) if isinstance(patch, dict) else []
+                        create_version(
+                            project_name=project_name,
+                            source="agent_setting",
+                            note=f"Agent confirmed update ({datetime.now().strftime('%Y-%m-%d %H:%M:%S')}): {', '.join(patch_keys)}",
+                            params=updated_params if isinstance(updated_params, dict) else {},
+                            patch=patch if isinstance(patch, dict) else {},
+                        )
+                    log_event(
+                        project_name=project_name,
+                        source=CHAT_AGENT_STR_FOR_LOGGING,
+                        event_type="agent_apply_patch",
+                        status="success",
+                        message="Confirmed agent proposal and applied parameter patch.",
+                        payload={"patch_keys": sorted(list(patch.keys())) if isinstance(patch, dict) else []},
+                    )
+                    with st.spinner("Applying changes and running simulation..."):
+                        ok, msg = run_simulation_plan_with_params(updated_params)
+                    sources_markdown = _format_rag_sources_markdown(
+                        [hit for hit in pending_rag_hits if isinstance(hit, dict)][:3]
+                    )
+                    confirm_response_parts = [msg]
+                    if isinstance(patch, dict) and patch:
+                        confirm_response_parts.append("Changes applied to simulation parameters:")
+                        confirm_response_parts.append(f"```json\n{json.dumps(patch, indent=2)}\n```")
+                    if sources_markdown:
+                        confirm_response_parts.append(sources_markdown)
+                    history.append({"role": "assistant", "content": "\n\n".join(confirm_response_parts)})
+                    st.session_state["agent_pending_proposal"] = None
+                    st.rerun()
+
+                if c2.button("Reject proposal", key="agent_reject_proposal"):
+                    history.append(
+                        {
+                            "role": "assistant",
+                            "content": "Changes were not applied to simulation parameters.",
+                        }
+                    )
+                    st.session_state["agent_pending_proposal"] = None
+                    st.rerun()
 
     user_message = st.chat_input("Ask the agent to tune grid_limit / evo_threshold / battery selection...")
     if user_message:
@@ -274,6 +312,7 @@ def main() -> None:
     st.set_page_config(page_title="asimplex", page_icon=":speech_balloon:", layout="wide")
     st.sidebar.image("c:/Users/el_Boon/reference/Portfolio/logo.png", width=100)
     init_session_state()
+    _init_battery_extremes_from_price_list()
     st.sidebar.title("asimplex")
     st.sidebar.markdown(
         "AI-Assisted Simulation for Simplifying Complexity<br>"
@@ -293,7 +332,8 @@ def main() -> None:
         render_simulation_plan_section()
         render_simulation_results_section()
     with chat_tab:
-        render_chat_shell()
+        with st.expander("Chat UI", expanded=True):
+            render_chat_shell()
     with logs_tab:
         render_log_viewer_section()
 

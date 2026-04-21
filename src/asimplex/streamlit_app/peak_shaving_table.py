@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 
+import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
@@ -11,7 +12,10 @@ from plotly.subplots import make_subplots
 
 from asimplex.constants import HOUR_FRAC, TARIFF_THRESHOLD
 from asimplex.streamlit_app.profile_columns import ProfileColumn
-from simuplex.application_support_functions.peak_shaving import determine_battery_discharge
+from simuplex.application_support_functions.peak_shaving import (
+    determine_battery_discharge,
+    determine_capacity_needed_for_peak_shaving,
+)
 
 ENERGY_COLOR = "#D4A017"  # soft gold
 PEAK_POWER_COLOR = "#5B8FD9"  # muted blue
@@ -98,6 +102,163 @@ def _build_peak_shaving_json(
     }
 
 
+def recompute_peak_shaving_capacity_table() -> pd.DataFrame:
+    profiles = st.session_state.get("power_profiles")
+    if not isinstance(profiles, pd.DataFrame) or profiles.empty:
+        df = pd.DataFrame()
+        st.session_state["peak_shaving_capacity_table"] = df
+        return df
+    if ProfileColumn.SITE_LOAD.column_name not in profiles.columns:
+        df = pd.DataFrame()
+        st.session_state["peak_shaving_capacity_table"] = df
+        return df
+
+    load_series = pd.to_numeric(profiles[ProfileColumn.SITE_LOAD.column_name], errors="coerce").dropna()
+    if load_series.empty:
+        df = pd.DataFrame()
+        st.session_state["peak_shaving_capacity_table"] = df
+        return df
+
+    load_median = float(load_series.median())
+    load_max = float(load_series.max())
+    start_limit = int(np.floor(load_median))
+    end_limit = int(np.ceil(load_max))
+    if end_limit < start_limit:
+        end_limit = start_limit
+
+    load_profile_df = pd.DataFrame({"load": load_series}, index=load_series.index)
+    rows: list[dict[str, float]] = []
+    for grid_limit in range(start_limit, end_limit + 1):
+        capacity_kwh, power_kw = determine_capacity_needed_for_peak_shaving(
+            grid_limit=float(grid_limit),
+            load_profile=load_profile_df,
+            load_col="load",
+        )
+        rows.append(
+            {
+                "grid_limit_kw": float(grid_limit),
+                "capacity_kwh": float(capacity_kwh),
+                "power_kw": float(power_kw),
+            }
+        )
+
+    capacity_df = pd.DataFrame(rows)
+    biggest_cap = st.session_state.get("battery_with_biggest_capacity", {})
+    biggest_power = st.session_state.get("battery_with_biggest_power", {})
+    if isinstance(biggest_cap, dict) and isinstance(biggest_power, dict):
+        cap_a = biggest_cap.get("capacity")
+        cap_b = biggest_power.get("capacity")
+        try:
+            smaller_cap = min(float(cap_a), float(cap_b))
+            capacity_df = capacity_df.loc[capacity_df["capacity_kwh"] <= smaller_cap].copy()
+        except (TypeError, ValueError):
+            pass
+    st.session_state["peak_shaving_capacity_table"] = capacity_df
+    return capacity_df
+
+
+def _build_peak_shaving_capacity_summary(capacity_df: pd.DataFrame) -> dict[str, object]:
+    if not isinstance(capacity_df, pd.DataFrame) or capacity_df.empty:
+        return {
+            "limits": {
+                "grid_limit_min_kw": None,
+                "grid_limit_max_kw": None,
+                "rows_total": 0,
+            },
+            "battery_caps": {
+                "largest_capacity_kwh": None,
+                "largest_power_battery_capacity_kwh": None,
+                "smaller_cap_kwh": None,
+            },
+            "feasibility": {
+                "feasible_rows_count": 0,
+                "first_feasible_grid_limit_kw": None,
+            },
+            "anchor_candidates": [],
+        }
+
+    largest_capacity = None
+    largest_power_battery_capacity = None
+    smaller_cap = None
+    biggest_cap = st.session_state.get("battery_with_biggest_capacity", {})
+    biggest_power = st.session_state.get("battery_with_biggest_power", {})
+    try:
+        largest_capacity = float((biggest_cap or {}).get("capacity"))
+    except (TypeError, ValueError):
+        largest_capacity = None
+    try:
+        largest_power_battery_capacity = float((biggest_power or {}).get("capacity"))
+    except (TypeError, ValueError):
+        largest_power_battery_capacity = None
+    if largest_capacity is not None and largest_power_battery_capacity is not None:
+        smaller_cap = min(largest_capacity, largest_power_battery_capacity)
+
+    df = capacity_df.copy()
+    if smaller_cap is not None:
+        df["capacity_feasible"] = pd.to_numeric(df["capacity_kwh"], errors="coerce") <= float(smaller_cap)
+    else:
+        df["capacity_feasible"] = True
+    feasible_df = df.loc[df["capacity_feasible"]].copy()
+
+    anchor_df = feasible_df if not feasible_df.empty else df
+    anchor_candidates: list[dict[str, object]] = []
+    if not anchor_df.empty:
+        index_candidates = {0, len(anchor_df) // 2, len(anchor_df) - 1}
+        target_grid_limit = float(anchor_df["grid_limit_kw"].median())
+        nearest_idx = (anchor_df["grid_limit_kw"] - target_grid_limit).abs().idxmin()
+        index_candidates.add(int(anchor_df.index.get_loc(nearest_idx)))
+
+        for idx in sorted(index_candidates):
+            if idx < 0 or idx >= len(anchor_df):
+                continue
+            row = anchor_df.iloc[idx]
+            anchor_candidates.append(
+                {
+                    "grid_limit_kw": float(row["grid_limit_kw"]),
+                    "required_capacity_kwh": float(row["capacity_kwh"]),
+                    "required_power_kw": float(row["power_kw"]),
+                    "capacity_feasible": bool(row["capacity_feasible"]),
+                }
+            )
+
+        deduped: list[dict[str, object]] = []
+        seen_keys: set[tuple[float, float, float, bool]] = set()
+        for item in anchor_candidates:
+            key = (
+                float(item["grid_limit_kw"]),
+                float(item["required_capacity_kwh"]),
+                float(item["required_power_kw"]),
+                bool(item["capacity_feasible"]),
+            )
+            if key in seen_keys:
+                continue
+            seen_keys.add(key)
+            deduped.append(item)
+        anchor_candidates = deduped[:5]
+
+    first_feasible = None
+    if not feasible_df.empty:
+        first_feasible = float(feasible_df["grid_limit_kw"].iloc[0])
+
+    return {
+        "limits": {
+            "grid_limit_min_kw": float(df["grid_limit_kw"].min()),
+            "grid_limit_max_kw": float(df["grid_limit_kw"].max()),
+            "rows_total": int(len(df)),
+        },
+        "battery_caps": {
+            "largest_capacity_kwh": largest_capacity,
+            "largest_power_battery_capacity_kwh": largest_power_battery_capacity,
+            "smaller_cap_kwh": smaller_cap,
+        },
+        "feasibility": {
+            "feasible_rows_count": int(len(feasible_df)),
+            "first_feasible_grid_limit_kw": first_feasible,
+        },
+        "anchor_candidates": anchor_candidates,
+    }
+
+
 def render_peak_shaving_table() -> None:
     profiles = st.session_state.get("power_profiles")
     if profiles is None or profiles.empty:
@@ -112,6 +273,19 @@ def render_peak_shaving_table() -> None:
         if not required_cols.issubset(set(profiles.columns)):
             st.info("Load and PV profiles are both required to compute battery discharge results.")
             return
+
+        capacity_df = st.session_state.get("peak_shaving_capacity_table")
+        if not isinstance(capacity_df, pd.DataFrame):
+            capacity_df = recompute_peak_shaving_capacity_table()
+        if isinstance(capacity_df, pd.DataFrame) and not capacity_df.empty:
+            st.markdown("**Capacity needed for peak shaving (filtered by largest available batteries)**")
+            st.dataframe(capacity_df.round(3), width="stretch", hide_index=True)
+        st.session_state["peak_shaving_capacity_summary_json"] = _build_peak_shaving_capacity_summary(capacity_df)
+        with st.expander("Peak shaving capacity summary JSON (for LLM)", expanded=False):
+            st.code(
+                json.dumps(st.session_state.get("peak_shaving_capacity_summary_json", {}), indent=2),
+                language="json",
+            )
 
         load_peak = float(profiles[ProfileColumn.SITE_LOAD.column_name].max())
         if load_peak <= 0:
