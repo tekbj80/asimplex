@@ -5,6 +5,8 @@ from __future__ import annotations
 import copy
 import json
 
+from bokeh.embed import file_html
+from bokeh.resources import CDN
 import pandas as pd
 import streamlit as st
 from simuplex import DEFAULT_BATTERY_PARAMS, DEFAULT_CLOCK_PARAMS, DEFAULT_COMMERCIAL_PARAMS, DEFAULT_GRID_PARAMS
@@ -13,7 +15,7 @@ from simuplex.applications.peak_shaving import DEFAULT_APPLICATION_PARAMS
 from asimplex.observability.app_log_store import log_event
 from asimplex.persistence.session_store import create_version, get_version_by_no, list_versions
 from asimplex.streamlit_app.profile_columns import ProfileColumn
-from asimplex.tools.simuplex_simulation import build_peak_shaving_simulator, build_simulation_plot_html
+from asimplex.tools.simuplex_simulation import build_peak_shaving_simulator, build_simulation_plot_layout
 
 
 def default_simulation_plan_params() -> dict:
@@ -201,8 +203,14 @@ def run_simulation_plan_with_params(params: dict) -> tuple[bool, str]:
         )
         simulator.run_simulation(in_jupyter=False, disable_tqdm=False, calculate_benchmarks=True)
         benchmarks = simulator.benchmarks or {}
-        simulation_plot_html = build_simulation_plot_html(simulator, title="Simulation Plan Output")
+        simulation_plot_layout = build_simulation_plot_layout(
+            simulator,
+            title="Simulation Plan Output",
+            additional_description="Interactive output from the proposed simulation settings.",
+        )
+        simulation_plot_html = file_html(simulation_plot_layout, CDN, "Simulation Plan Output")
         st.session_state["simulation_plan_benchmarks"] = benchmarks
+        st.session_state["simulation_plan_plot_layout"] = simulation_plot_layout
         st.session_state["simulation_plan_plot_html"] = simulation_plot_html
         st.session_state["simulation_plan_params"] = params
         return True, "Simulation completed."
@@ -213,6 +221,7 @@ def run_simulation_plan_with_params(params: dict) -> tuple[bool, str]:
 def render_simulation_plan_section() -> None:
     params = update_simulation_plan_params()
     st.session_state.setdefault("simulation_plan_benchmarks", None)
+    st.session_state.setdefault("simulation_plan_plot_layout", None)
     st.session_state.setdefault("simulation_plan_plot_html", None)
 
     def _k(base: str) -> str:

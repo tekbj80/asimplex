@@ -79,6 +79,12 @@ def get_llm_simulation_context_payload(session_state: dict[str, Any]) -> dict[st
     }
 
 
+def get_llm_benchmark_summary_payload(session_state: dict[str, Any]) -> dict[str, Any]:
+    """Return a compact payload for benchmark-comparison narration."""
+    payload = session_state.get("simulation_benchmark_context_json") or {}
+    return payload if isinstance(payload, dict) else {}
+
+
 def calculate_evo_threshold_from_profile_summary(
     profile_summary_json: dict[str, Any],
     *,

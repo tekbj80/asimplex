@@ -2,6 +2,11 @@
 
 from __future__ import annotations
 
+import json
+from pathlib import Path
+
+from bokeh.io import save
+from bokeh.resources import CDN
 import pandas as pd
 import streamlit as st
 import streamlit.components.v1 as components
@@ -140,6 +145,53 @@ def _build_benchmark_context_payload(
     }
 
 
+def _default_simulation_save_description(
+    base_case_benchmarks: object,
+    proposal_benchmarks: object,
+) -> str:
+    if not isinstance(base_case_benchmarks, dict) or not isinstance(proposal_benchmarks, dict):
+        return "Simulation output saved."
+    lines: list[str] = ["Agent-driven improvements vs base case:"]
+    for benchmark_id in ("annual_electricity_cost", "power_charge", "grid_peak_power_drawn", "savings_due_to_battery"):
+        if benchmark_id not in base_case_benchmarks or benchmark_id not in proposal_benchmarks:
+            continue
+        base_v = _numeric_or_none(base_case_benchmarks.get(benchmark_id))
+        prop_v = _numeric_or_none(proposal_benchmarks.get(benchmark_id))
+        if base_v is None or prop_v is None:
+            continue
+        diff = base_v - prop_v
+        lines.append(f"- {_benchmark_label(benchmark_id)}: base={base_v:,.2f}, proposal={prop_v:,.2f}, delta={diff:,.2f}")
+    if len(lines) == 1:
+        lines.append("- See benchmark table for detailed comparison.")
+    return "\n".join(lines)
+
+
+def _ensure_agent_generated_save_description(
+    *,
+    benchmark_context_payload: object,
+    fallback_description: str,
+) -> str:
+    if not isinstance(benchmark_context_payload, dict) or not benchmark_context_payload:
+        return fallback_description
+    payload_key = str(hash(json.dumps(benchmark_context_payload, sort_keys=True, default=str)))
+    cache_key = "simulation_plot_save_description_agent_cache"
+    current_cache = st.session_state.get(cache_key)
+    if isinstance(current_cache, dict) and current_cache.get("payload_key") == payload_key:
+        cached_desc = str(current_cache.get("description", "") or "").strip()
+        return cached_desc or fallback_description
+    try:
+        from asimplex.agent.runner import run_benchmark_summary_agent
+
+        description = run_benchmark_summary_agent(session_state=st.session_state)
+        final_desc = description.strip() if isinstance(description, str) else ""
+        if not final_desc:
+            final_desc = fallback_description
+        st.session_state[cache_key] = {"payload_key": payload_key, "description": final_desc}
+        return final_desc
+    except Exception:
+        return fallback_description
+
+
 def _base_case_ready() -> bool:
     profiles = st.session_state.get("power_profiles")
     required_columns = {
@@ -263,7 +315,67 @@ def render_simulation_results_section() -> None:
                 st.dataframe(benchmark_styler, width="stretch", hide_index=True)
 
         simulation_plot_html = st.session_state.get("simulation_plan_plot_html")
+        simulation_plot_layout = st.session_state.get("simulation_plan_plot_layout")
         
         if isinstance(simulation_plot_html, str) and simulation_plot_html.strip():
             with st.expander("Simulation Interactive Plot", expanded=False):
+                project_name = str(st.session_state.get("project_name", "") or "").strip()
+                default_title = project_name if project_name else "Simulation Plan Output"
+                output_dir = Path.cwd() / "simulation_outputs"
+                output_dir.mkdir(parents=True, exist_ok=True)
+                safe_title = "".join(c if c.isalnum() or c in (" ", "-", "_") else "_" for c in default_title).strip() or "simulation_output"
+                default_path = output_dir / f"{safe_title.replace(' ', '_')}.html"
+                st.session_state.setdefault("simulation_plot_save_title", default_title)
+                fallback_description = _default_simulation_save_description(base_case_benchmarks, proposal_benchmarks)
+                benchmark_context_payload = st.session_state.get("simulation_benchmark_context_json")
+                generated_description = _ensure_agent_generated_save_description(
+                    benchmark_context_payload=benchmark_context_payload,
+                    fallback_description=fallback_description,
+                )
+                st.session_state["simulation_plot_save_description"] = generated_description
+                st.session_state.setdefault("simulation_plot_save_path", str(default_path))
+
+                st.markdown("**Save this plot**")
+                st.text_input(
+                    "Title",
+                    key="simulation_plot_save_title",
+                    help="Used as the exported HTML document title. Defaults to project name.",
+                )
+                st.text_area(
+                    "Description",
+                    key="simulation_plot_save_description",
+                    height=120,
+                    help="Summary of improvements vs base case (editable).",
+                )
+                st.text_input(
+                    "Output path (.html)",
+                    key="simulation_plot_save_path",
+                    help="Choose where to save the interactive Bokeh HTML file.",
+                )
+                if st.button("Save", key="simulation_plot_save_button", type="secondary"):
+                    if simulation_plot_layout is None:
+                        st.error("No Bokeh layout found in session. Run simulation again, then save.")
+                    else:
+                        try:
+                            save_path = Path(str(st.session_state.get("simulation_plot_save_path", "") or "").strip()).expanduser()
+                            if not save_path.suffix:
+                                save_path = save_path.with_suffix(".html")
+                            save_path.parent.mkdir(parents=True, exist_ok=True)
+                            title = str(st.session_state.get("simulation_plot_save_title", "") or default_title).strip() or default_title
+                            description = str(st.session_state.get("simulation_plot_save_description", "") or "").strip()
+                            save(
+                                simulation_plot_layout,
+                                filename=str(save_path),
+                                resources=CDN,
+                                title=title,
+                            )
+                            if description:
+                                metadata_path = save_path.with_suffix(".txt")
+                                metadata_path.write_text(
+                                    f"Title: {title}\n\nDescription:\n{description}\n",
+                                    encoding="utf-8",
+                                )
+                            st.success(f"Saved interactive plot to: {save_path}")
+                        except Exception as exc:
+                            st.error(f"Failed to save plot: {exc}")
                 components.html(simulation_plot_html, height=850, scrolling=True)

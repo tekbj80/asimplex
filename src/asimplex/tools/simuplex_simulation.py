@@ -5,8 +5,7 @@ from __future__ import annotations
 import copy
 import datetime as dt
 
-from bokeh.embed import file_html
-from bokeh.resources import CDN
+from bokeh.models.layouts import LayoutDOM
 from simuplex import (
     DEFAULT_BATTERY_PARAMS,
     DEFAULT_CLOCK_PARAMS,
@@ -160,7 +159,11 @@ def build_base_case_simulator(
     )
 
 
-def build_simulation_plot_html(simulator: PeakShavingMUSimulator, *, title: str = "Simulation Plan Output") -> str:
-    """Build HTML for the simulator interactive Bokeh plot."""
-    layout = sim_plot(simulator, title=title)
-    return file_html(layout, CDN, title)
+def build_simulation_plot_layout(
+    simulator: PeakShavingMUSimulator,
+    *,
+    title: str = "Simulation Plan Output",
+    additional_description: str | None = None,
+) -> LayoutDOM:
+    """Build Bokeh layout object for simulator interactive plot."""
+    return sim_plot(simulator, title=title, additional_description=additional_description)

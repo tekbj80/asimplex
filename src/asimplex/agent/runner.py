@@ -21,6 +21,7 @@ from asimplex.constants import (
 )
 from asimplex.agent.tools import (
     calculate_evo_threshold_from_profile_summary,
+    get_llm_benchmark_summary_payload,
     get_llm_simulation_context_payload,
     get_proposal_json_format as get_proposal_json_format_contract,
     propose_parameter_patch,
@@ -301,4 +302,36 @@ def run_tuning_agent(*, user_message: str, session_state: dict[str, Any]) -> dic
     parsed["usage"] = {"input_tokens": usage_in, "output_tokens": usage_out}
     parsed["tool_invocations"] = tool_invocations
     return parsed
+
+
+def run_benchmark_summary_agent(*, session_state: dict[str, Any]) -> str:
+    """Return a compact benchmark-improvement summary using minimal context."""
+    benchmark_payload = get_llm_benchmark_summary_payload(session_state)
+    if not benchmark_payload:
+        return ""
+    summary_prompt = (
+        "You are summarizing simulation improvements.\n"
+        "Given ONLY benchmark comparison JSON, write 3-5 concise bullets comparing proposal vs base case.\n"
+        "Use only evidence in the payload. No RAG sources, no speculation.\n"
+        "Prefer annual_electricity_cost, power_charge, grid_peak_power_drawn, savings_due_to_battery when present.\n"
+        "Keep units and numeric direction clear.\n"
+    )
+    model_name = os.getenv("ASIMPLEX_AGENT_MODEL", "gpt-4.1-mini")
+    llm = init_chat_model(model_name, temperature=0)
+    messages = [
+        HumanMessage(
+            content=(
+                f"{summary_prompt}\n\n"
+                f"benchmark_payload:\n{json.dumps(benchmark_payload, indent=2)}"
+            )
+        )
+    ]
+    resp = llm.invoke(messages)
+    content = getattr(resp, "content", "")
+    if isinstance(content, str):
+        return content.strip()
+    if isinstance(content, list):
+        joined = " ".join(str(item) for item in content)
+        return joined.strip()
+    return str(content).strip()
 
