@@ -1,0 +1,8 @@
+Title: Peak Shaving Test 1
+
+Description:
+- Annual electricity cost decreased by €150,380, from €436,449 to €286,069 per year in the proposal.  
+- Peak grid power drawn reduced by 87.4 kW, from 485.4 kW to 398.0 kW.  
+- Grid energy drawn lowered by 527,963 kWh annually, from 1,551,646 kWh to 1,023,683 kWh.  
+- Proposal generates €9,652 per year in feed-in revenue, compared to zero in the base case.  
+- Levelized cost of energy improved from €5.63/kWh to €3.96/kWh, indicating more cost-effective energy use.

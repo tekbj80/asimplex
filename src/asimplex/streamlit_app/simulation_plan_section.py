@@ -210,6 +210,7 @@ def run_simulation_plan_with_params(params: dict) -> tuple[bool, str]:
         )
         simulation_plot_html = file_html(simulation_plot_layout, CDN, "Simulation Plan Output")
         st.session_state["simulation_plan_benchmarks"] = benchmarks
+        st.session_state["simulation_plan_simulator"] = simulator
         st.session_state["simulation_plan_plot_layout"] = simulation_plot_layout
         st.session_state["simulation_plan_plot_html"] = simulation_plot_html
         st.session_state["simulation_plan_params"] = params
@@ -221,6 +222,7 @@ def run_simulation_plan_with_params(params: dict) -> tuple[bool, str]:
 def render_simulation_plan_section() -> None:
     params = update_simulation_plan_params()
     st.session_state.setdefault("simulation_plan_benchmarks", None)
+    st.session_state.setdefault("simulation_plan_simulator", None)
     st.session_state.setdefault("simulation_plan_plot_layout", None)
     st.session_state.setdefault("simulation_plan_plot_html", None)
 

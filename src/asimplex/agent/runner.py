@@ -311,7 +311,12 @@ def run_benchmark_summary_agent(*, session_state: dict[str, Any]) -> str:
         return ""
     summary_prompt = (
         "You are summarizing simulation improvements.\n"
-        "Given ONLY benchmark comparison JSON, write 3-5 concise bullets comparing proposal vs base case.\n"
+        "Given ONLY benchmark comparison JSON, write 3-5 concise bullet points comparing proposal vs base case.\n"
+        "Formatting rules (strict):\n"
+        "- Return plain text only.\n"
+        "- Each point must be on its own line.\n"
+        "- Each point must start with '- ' (minus followed by space).\n"
+        "- Do not use numbered lists.\n"
         "Use only evidence in the payload. No RAG sources, no speculation.\n"
         "Prefer annual_electricity_cost, power_charge, grid_peak_power_drawn, savings_due_to_battery when present.\n"
         "Keep units and numeric direction clear.\n"
@@ -331,7 +336,17 @@ def run_benchmark_summary_agent(*, session_state: dict[str, Any]) -> str:
     if isinstance(content, str):
         return content.strip()
     if isinstance(content, list):
-        joined = " ".join(str(item) for item in content)
+        parts: list[str] = []
+        for item in content:
+            if isinstance(item, dict):
+                text_part = item.get("text")
+                if isinstance(text_part, str):
+                    parts.append(text_part)
+                else:
+                    parts.append(str(item))
+            else:
+                parts.append(str(item))
+        joined = "\n".join(part for part in parts if part.strip())
         return joined.strip()
     return str(content).strip()
 
