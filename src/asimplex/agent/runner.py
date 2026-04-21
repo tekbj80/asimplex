@@ -20,6 +20,7 @@ from asimplex.constants import (
     ASIMPLEX_AGENT_HISTORY_STRATEGY,
 )
 from asimplex.agent.tools import (
+    calculate_evo_threshold_from_profile_summary,
     get_llm_simulation_context_payload,
     get_proposal_json_format as get_proposal_json_format_contract,
     propose_parameter_patch,
@@ -49,13 +50,28 @@ Always include concise reasoning and mention EVO logic:
 - lsk_charge_from_grid influences charging toward evo_threshold.
 
 
-In order to select the right battery, you should consider the following:
+Battery sizing and grid-limit selection workflow (follow this order):
 
-1. Estimate EVO capacity needs from profile_summary_json PV surplus and usage quantiles; avoid choosing a battery that would be underutilized across the year. 
-2. Choose grid_limit from peak_shaving_capacity_summary_json.anchor_candidates and peak_shaving_json; prioritize feasible candidates and consider tariff demand charges when balancing cost vs battery size
-3. Do not invent battery size requirements. First estimate target capacity/power and call
-   `lookup_price_list_near_target` to get nearest candidates. Use `lookup_price_list`
-   only as a fallback text search.
+1. Read `profile_summary_json` and estimate EVO energy target from PV surplus/usage quantiles.
+   - Use p25 as the "regular year" anchor (roughly enough for 75% of days).
+   - Keep p50/p75 as upper-bound checks so the selected battery is not too small.
+2. Read `peak_shaving_capacity_summary_json`.
+   - Start from `anchor_candidates` where feasibility is true.
+   - Pick a candidate grid_limit that reduces demand peaks while staying close to feasible battery sizes.
+3. Convert steps (1) and (2) into explicit battery targets:
+   - `target_capacity_kwh` = max(EVO anchor, peak-shaving required capacity at chosen grid_limit)
+   - `target_power_kw` = peak-shaving required power at chosen grid_limit
+4. Call `lookup_price_list_near_target(target_capacity_kwh, target_power_kw)`.
+   - Compare multiple nearest candidates, not just the first hit.
+   - Prefer candidates that meet BOTH capacity and power with minimal oversizing.
+5. If no reasonable candidate is returned, then (and only then) use `lookup_price_list` fallback.
+6. For any chosen battery candidate, call `calculate_evo_threshold(capacity_kwh)` and
+   use the returned value as the primary suggestion for `application.evo_threshold`.
+
+
+Hard rules:
+- Do not invent battery sizes without numeric anchors from context payloads.
+- In reasoning, explicitly state the EVO anchor, the chosen grid_limit anchor, and the final target capacity/power.
 
 Reference the selected candidate/tradeoff in your reasoning when applicable.
 
@@ -69,7 +85,7 @@ When documentation evidence is needed or unclear, call `search_strategy_docs`
 with a refined query and ground your explanation in those retrieved sources.
 
 Terminology: 
-- EVO (Eigenverbrauchoptimierung) and SCO (Self-Consumption Optimization) are the same thing: to shift PV power using battert to supply the load.
+- EVO (Eigenverbrauchoptimierung) and SCO (Self-Consumption Optimization) are the same thing: to shift PV power using battery to supply the load.
 - PLS (Peak Load Shaving), Peak Shaving, Lastspitzenkappung (LSK) are the same thing, that means to reduce the peak load.
 
 """.strip()
@@ -175,6 +191,15 @@ def run_tuning_agent(*, user_message: str, session_state: dict[str, Any]) -> dic
         )
 
     @tool
+    def calculate_evo_threshold(capacity_kwh: float) -> str:
+        """Calculate evo_threshold from battery capacity and profile_summary_json anchors."""
+        result = calculate_evo_threshold_from_profile_summary(
+            context_payloads.get("profile_summary_json", {}),
+            capacity_kwh=capacity_kwh,
+        )
+        return json.dumps(result, indent=2)
+
+    @tool
     def get_proposal_json_format() -> str:
         """Return canonical nested JSON contract for proposed_params."""
         return json.dumps(get_proposal_json_format_contract(), indent=2)
@@ -200,6 +225,7 @@ def run_tuning_agent(*, user_message: str, session_state: dict[str, Any]) -> dic
         get_context_payloads,
         lookup_price_list,
         lookup_price_list_near_target,
+        calculate_evo_threshold,
         get_proposal_json_format,
         draft_parameter_patch,
         search_strategy_docs,

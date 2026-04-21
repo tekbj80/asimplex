@@ -79,6 +79,59 @@ def get_llm_simulation_context_payload(session_state: dict[str, Any]) -> dict[st
     }
 
 
+def calculate_evo_threshold_from_profile_summary(
+    profile_summary_json: dict[str, Any],
+    *,
+    capacity_kwh: float,
+) -> dict[str, Any]:
+    """Calculate evo_threshold using pv_surplus daily-energy anchors.
+
+    Formula:
+        evo_threshold = (capacity_kwh - evo_energy_needed_kwh) / capacity_kwh
+    """
+    try:
+        capacity = float(capacity_kwh)
+    except (TypeError, ValueError):
+        return {"evo_threshold": None, "evo_energy_needed_kwh": None, "error": "capacity_kwh must be numeric."}
+    if capacity <= 0:
+        return {"evo_threshold": None, "evo_energy_needed_kwh": None, "error": "capacity_kwh must be greater than 0."}
+
+    summary = profile_summary_json if isinstance(profile_summary_json, dict) else {}
+    pv_surplus = summary.get("pv_surplus", {})
+    pv_surplus_metrics = pv_surplus.get("metrics", {}) if isinstance(pv_surplus, dict) else {}
+
+    evo_energy_needed = None
+    if isinstance(pv_surplus_metrics, dict):
+        for key in ("daily_energy_p25_kWh", "daily_energy_p50_kWh", "average_daily_energy_kWh"):
+            raw = pv_surplus_metrics.get(key)
+            try:
+                if raw is not None:
+                    evo_energy_needed = float(raw)
+                    break
+            except (TypeError, ValueError):
+                continue
+    if evo_energy_needed is None:
+        return {
+            "evo_threshold": None,
+            "evo_energy_needed_kwh": None,
+            "error": "Missing pv_surplus daily energy metrics in profile_summary_json.",
+        }
+
+    evo_threshold = (capacity - evo_energy_needed) / capacity
+    evo_threshold = max(0.0, min(1.0, float(evo_threshold)))
+    return {
+        "evo_threshold": evo_threshold,
+        "evo_energy_needed_kwh": float(evo_energy_needed),
+        "capacity_kwh": capacity,
+        "formula": "evo_threshold=(capacity_kwh-evo_energy_needed_kwh)/capacity_kwh",
+        "anchor_metric_preference": [
+            "daily_energy_p25_kWh",
+            "daily_energy_p50_kWh",
+            "average_daily_energy_kWh",
+        ],
+    }
+
+
 def get_proposal_json_format() -> dict[str, Any]:
     """Return canonical proposal JSON contract for agent parameter updates."""
     return {
