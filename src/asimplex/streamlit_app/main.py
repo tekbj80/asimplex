@@ -20,6 +20,7 @@ from asimplex.streamlit_app.peak_shaving_table import render_peak_shaving_table
 from asimplex.streamlit_app.power_profiles_plot import render_power_profiles_plot
 from asimplex.streamlit_app.pv_profile_section import render_pv_profile_section
 from asimplex.streamlit_app.rate_limit import check_llm_usage_window_limit
+from asimplex.streamlit_app.input_safety import check_user_prompt_risk
 from asimplex.streamlit_app.session_state import init_session_state
 from asimplex.streamlit_app.sidebar import render_sidebar
 from asimplex.streamlit_app.simulation_plan_section import (
@@ -214,6 +215,45 @@ def render_chat_shell() -> None:
                 payload={"retry_after_seconds": retry_after, "chat_requests_per_minute": chat_limit},
             )
             st.rerun()
+
+        safety_enabled = bool(st.session_state.get("input_safety_enabled", True))
+        if safety_enabled:
+            safety_result = check_user_prompt_risk(user_message)
+            if not bool(safety_result.get("allowed", True)):
+                phrases = safety_result.get("offending_phrases", [])
+                phrase_lines = []
+                if isinstance(phrases, list):
+                    for phrase in phrases:
+                        phrase_text = str(phrase or "").strip()
+                        if phrase_text:
+                            phrase_lines.append(f"- `{phrase_text}`")
+                blocked_response_parts = [
+                    "Security check failed. Please rephrase your request.",
+                ]
+                if phrase_lines:
+                    blocked_response_parts.append("Detected phrase(s):")
+                    blocked_response_parts.extend(phrase_lines)
+                blocked_response = "\n".join(blocked_response_parts)
+                history.append({"role": "assistant", "content": blocked_response})
+                if active_project_name:
+                    append_exchange(
+                        project_name=active_project_name,
+                        user_message=user_message,
+                        assistant_message=blocked_response,
+                    )
+                log_event(
+                    project_name=str(st.session_state.get("project_name", "") or ""),
+                    source=CHAT_AGENT_STR_FOR_LOGGING,
+                    event_type="input_safety",
+                    status="blocked",
+                    message="Chat request blocked by pre-input safety filter.",
+                    payload={
+                        "risk_level": str(safety_result.get("risk_level", "") or ""),
+                        "matched_rules": safety_result.get("matched_rules", []),
+                        "offending_phrases": safety_result.get("offending_phrases", []),
+                    },
+                )
+                st.rerun()
 
         with st.spinner("Agent is reasoning..."):
             try:
