@@ -56,6 +56,7 @@ def init_session_state() -> None:
     st.session_state.setdefault("tariff_cooldown_seconds", 60)
     st.session_state.setdefault("chat_requests_per_minute", 12)
     st.session_state.setdefault("input_safety_enabled", True)
+    st.session_state.setdefault("show_debug_errors", False)
     st.session_state.setdefault("agent_history_strategy", ASIMPLEX_AGENT_HISTORY_STRATEGY)
     st.session_state.setdefault("agent_history_max_messages", ASIMPLEX_AGENT_HISTORY_MAX_MESSAGES)
     st.session_state.setdefault("agent_history_max_turns", ASIMPLEX_AGENT_HISTORY_MAX_TURNS)

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import traceback
 from datetime import datetime
 
 import streamlit as st
@@ -329,7 +330,15 @@ def render_chat_shell() -> None:
                     st.session_state["agent_pending_proposal"] = None
                 st.rerun()
             except Exception as exc:  # pragma: no cover - depends on runtime/model config
-                err = f"Agent request failed: {exc}"
+                traceback_text = traceback.format_exc()
+                err = f"Agent request failed: {type(exc).__name__}: {exc}"
+                if bool(st.session_state.get("show_debug_errors", False)):
+                    err = (
+                        f"{err}\n\n"
+                        "```text\n"
+                        f"{traceback_text[-4000:]}\n"
+                        "```"
+                    )
                 history.append({"role": "assistant", "content": err})
                 if active_project_name:
                     append_exchange(
@@ -342,8 +351,9 @@ def render_chat_shell() -> None:
                     source=CHAT_AGENT_STR_FOR_LOGGING,
                     event_type="agent_turn",
                     status="error",
-                    error=str(exc),
+                    error=f"{type(exc).__name__}: {exc}",
                     message="Agent request failed.",
+                    payload={"traceback": traceback_text[-12000:]},
                 )
                 st.rerun()
 

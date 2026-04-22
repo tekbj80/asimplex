@@ -130,6 +130,66 @@ def _extract_json_object(text: str) -> dict[str, Any]:
     return {}
 
 
+def _json_default(value: Any) -> Any:
+    """Convert common non-JSON-native values (e.g. numpy scalars)."""
+    if hasattr(value, "item"):
+        try:
+            return value.item()
+        except Exception:
+            pass
+    if isinstance(value, set):
+        return list(value)
+    raise TypeError(f"Object of type {type(value).__name__} is not JSON serializable")
+
+
+def _find_first_non_json_value(value: Any, *, path: str = "$") -> tuple[str, str] | None:
+    """Return first path/type that is not JSON-serializable with current rules."""
+    if value is None or isinstance(value, (str, int, float, bool)):
+        return None
+    if hasattr(value, "item"):
+        try:
+            item_value = value.item()
+            return _find_first_non_json_value(item_value, path=path)
+        except Exception:
+            return path, type(value).__name__
+    if isinstance(value, dict):
+        for key, sub_value in value.items():
+            if not isinstance(key, (str, int, float, bool)) and key is not None:
+                return f"{path}.<key>", type(key).__name__
+            sub_path = f"{path}.{key}"
+            found = _find_first_non_json_value(sub_value, path=sub_path)
+            if found is not None:
+                return found
+        return None
+    if isinstance(value, (list, tuple)):
+        for idx, sub_value in enumerate(value):
+            found = _find_first_non_json_value(sub_value, path=f"{path}[{idx}]")
+            if found is not None:
+                return found
+        return None
+    if isinstance(value, set):
+        for idx, sub_value in enumerate(list(value)):
+            found = _find_first_non_json_value(sub_value, path=f"{path}<set>[{idx}]")
+            if found is not None:
+                return found
+        return None
+    return path, type(value).__name__
+
+
+def _safe_json_dumps(value: Any, *, label: str) -> str:
+    try:
+        return json.dumps(value, indent=2, default=_json_default)
+    except TypeError as exc:
+        found = _find_first_non_json_value(value, path="$")
+        if found is not None:
+            offending_path, offending_type = found
+            raise TypeError(
+                f"{label} serialization failed at {offending_path} "
+                f"(type={offending_type}): {exc}"
+            ) from exc
+        raise TypeError(f"{label} serialization failed: {exc}") from exc
+
+
 def _extract_tool_invocations(messages: list[Any] | None) -> list[dict[str, Any]]:
     if not messages:
         return []
@@ -179,7 +239,7 @@ def run_tuning_agent(*, user_message: str, session_state: dict[str, Any]) -> dic
     @tool
     def get_context_payloads() -> str:
         """Return profile summary, peak-shaving JSON, and current simulation params."""
-        return json.dumps(context_payloads, indent=2)
+        return _safe_json_dumps(context_payloads, label="get_context_payloads")
 
     @tool
     def lookup_price_list(query: str) -> str:
@@ -188,18 +248,18 @@ def run_tuning_agent(*, user_message: str, session_state: dict[str, Any]) -> dic
         NOTE: Slated for removal in favor of `lookup_price_list_near_target`.
         Kept temporarily for fallback/manual lookup scenarios.
         """
-        return json.dumps(search_price_list(query, limit=12), indent=2)
+        return _safe_json_dumps(search_price_list(query, limit=12), label="lookup_price_list")
 
     @tool
     def lookup_price_list_near_target(target_capacity_kwh: float, target_power_kw: float) -> str:
         """Return battery candidates nearest to target capacity/power."""
-        return json.dumps(
+        return _safe_json_dumps(
             search_price_list_near_target(
                 target_capacity_kwh=target_capacity_kwh,
                 target_power_kw=target_power_kw,
                 limit=10,
             ),
-            indent=2,
+            label="lookup_price_list_near_target",
         )
 
     @tool
@@ -209,12 +269,12 @@ def run_tuning_agent(*, user_message: str, session_state: dict[str, Any]) -> dic
             context_payloads.get("profile_summary_json", {}),
             capacity_kwh=capacity_kwh,
         )
-        return json.dumps(result, indent=2)
+        return _safe_json_dumps(result, label="calculate_evo_threshold")
 
     @tool
     def get_proposal_json_format() -> str:
         """Return canonical nested JSON contract for proposed_params."""
-        return json.dumps(get_proposal_json_format_contract(), indent=2)
+        return _safe_json_dumps(get_proposal_json_format_contract(), label="get_proposal_json_format")
 
     @tool
     def draft_parameter_patch(proposed_params_json: str) -> str:
@@ -223,13 +283,13 @@ def run_tuning_agent(*, user_message: str, session_state: dict[str, Any]) -> dic
         if not isinstance(proposed_obj, dict):
             proposed_obj = {}
         result_obj = propose_parameter_patch(current_params if isinstance(current_params, dict) else {}, proposed_obj)
-        return json.dumps(result_obj, indent=2)
+        return _safe_json_dumps(result_obj, label="draft_parameter_patch")
 
     @tool
     def search_strategy_docs(query: str) -> str:
         """Retrieve relevant chunks from the strategy RAG collection for explanation grounding."""
         hits = retrieve_rag_context(query)
-        return json.dumps(hits, indent=2)
+        return _safe_json_dumps(hits, label="search_strategy_docs")
 
     model_name = os.getenv("ASIMPLEX_AGENT_MODEL", "gpt-4.1-mini")
     llm = init_chat_model(model_name, temperature=0)
@@ -338,7 +398,7 @@ def run_benchmark_summary_agent(*, session_state: dict[str, Any]) -> str:
         HumanMessage(
             content=(
                 f"{summary_prompt}\n\n"
-                f"benchmark_payload:\n{json.dumps(benchmark_payload, indent=2)}"
+                f"benchmark_payload:\n{_safe_json_dumps(benchmark_payload, label='run_benchmark_summary_agent')}"
             )
         )
     ]
